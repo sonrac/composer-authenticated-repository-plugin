@@ -7,16 +7,6 @@
         "my-org/private-package": "^1.0",
         "company/internal-library": "^2.0"
     },
-    "repositories": [
-        {
-            "type": "composer-authenticated",
-            "url": "https://api.github.com/repos/my-org/private-packages/contents/composer-repository.json"
-        },
-        {
-            "type": "composer-authenticated",
-            "url": "https://artifacts.mycompany.com/composer-repository.json"
-        }
-    ],
     "config": {
         "allow-plugins": {
             "sonrac/composer-authenticated-repository-plugin": true
@@ -50,5 +40,21 @@
         ]
     },
     "minimum-stability": "stable",
-    "prefer-stable": true
+    "prefer-stable": true,
+    "extra": {
+        "composer-authenticated-plugin": {
+            "repositories": [
+                {
+                    "owner": "my-org",
+                    "name": "private-packages",
+                    "url": "https://github.com/my-org/private-packages/releases/composer-repository/composer-repository.json"
+                },
+                {
+                    "owner": "my-org",
+                    "name": "private-packages-new",
+                    "url": "https://artifacts.mycompany.com/composer-repository.json"
+                }
+            ]
+        }
+    }
 }

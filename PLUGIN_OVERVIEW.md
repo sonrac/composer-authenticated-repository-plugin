@@ -17,21 +17,8 @@ The plugin implements a custom repository type `composer-authenticated` that ext
 
 **Methods**:
 - `activate()`: Called when plugin is activated
-- `getCapabilities()`: Returns capability providers
 
-### 2. Repository Factory (`AuthenticatedRepositoryFactory.php`)
-
-**Purpose**: Creates authenticated repository instances
-
-**Key Features**:
-- Implements `RepositoryFactoryProvider` capability
-- Validates repository type is `composer-authenticated`
-- Creates `AuthenticatedComposerRepository` instances
-
-**Methods**:
-- `createRepo()`: Creates authenticated repository instances
-
-### 3. Authenticated Repository (`AuthenticatedComposerRepository.php`)
+### 2. Authenticated Repository (`AuthenticatedComposerRepository.php`)
 
 **Purpose**: Wraps standard Composer repository with authentication
 
@@ -45,7 +32,7 @@ The plugin implements a custom repository type `composer-authenticated` that ext
 - `getGitHubToken()`: Retrieves GitHub token from config
 - `getHttpBasicAuth()`: Retrieves HTTP basic auth from config
 
-### 4. Authenticated HTTP Downloader (`AuthenticatedHttpDownloader.php`)
+### 3. Authenticated HTTP Downloader (`AuthenticatedHttpDownloader.php`)
 
 **Purpose**: Wraps HTTP downloader with authentication headers
 
@@ -66,14 +53,23 @@ The plugin implements a custom repository type `composer-authenticated` that ext
 
 ### 1. Repository Creation
 ```php
-// User configures repository
+// User configures extra config
 {
-    "type": "composer-authenticated",
-    "url": "https://api.github.com/repos/org/repo/contents/composer-repository.json"
+    "extra": {
+        "composer-authenticated-plugin": {
+            "repositories": [
+                {
+                    "owner": "my-org",
+                    "name": "private-packages",
+                    "url": "https://github.com/my-org/private-packages/releases/composer-repository/composer-repository.json"
+                }
+            ]
+        }
+    }
 }
 
 // Plugin creates authenticated repository
-$repository = new AuthenticatedComposerRepository($config, $io, $composerConfig, $httpDownloader, $authConfig);
+$repository = new AuthenticatedComposerRepository($config, $io, $composerConfig, $httpDownloader, $authConfig, $ownerName, $repoName);
 ```
 
 ### 2. Credential Retrieval
@@ -94,7 +90,9 @@ $authenticatedDownloader = new AuthenticatedHttpDownloader(
     $originalDownloader,
     $githubToken,
     $httpBasicAuth,
-    $authConfig
+    $authConfig,
+    $ownerName,
+    $repoName,
 );
 ```
 
@@ -119,16 +117,6 @@ if ($this->httpBasicAuth) {
 ```bash
 # Configure GitHub token
 composer config github-oauth.api.github.com YOUR_GITHUB_TOKEN
-
-# Use in composer.json
-{
-    "repositories": [
-        {
-            "type": "composer-authenticated",
-            "url": "https://api.github.com/repos/org/repo/contents/composer-repository.json"
-        }
-    ]
-}
 ```
 
 ### HTTP Basic Authentication
@@ -136,16 +124,6 @@ composer config github-oauth.api.github.com YOUR_GITHUB_TOKEN
 ```bash
 # Configure HTTP basic auth
 composer config http-basic.artifacts.company.com username password
-
-# Use in composer.json
-{
-    "repositories": [
-        {
-            "type": "composer-authenticated",
-            "url": "https://artifacts.company.com/composer-repository.json"
-        }
-    ]
-}
 ```
 
 ### Environment Variables
@@ -220,44 +198,16 @@ composer config http-basic.artifacts.company.com username password
 ## Usage Scenarios
 
 ### 1. Private GitHub Packages
-```json
-{
-    "repositories": [
-        {
-            "type": "composer-authenticated",
-            "url": "https://api.github.com/repos/my-org/private-packages/contents/composer-repository.json"
-        }
-    ]
-}
-```
+
+@TODO add description
 
 ### 2. Enterprise Artifact Repositories
-```json
-{
-    "repositories": [
-        {
-            "type": "composer-authenticated",
-            "url": "https://artifacts.company.com/composer-repository.json"
-        }
-    ]
-}
-```
+
+@TODO add description
 
 ### 3. Mixed Authentication
-```json
-{
-    "repositories": [
-        {
-            "type": "composer-authenticated",
-            "url": "https://api.github.com/repos/org/repo/contents/composer-repository.json"
-        },
-        {
-            "type": "composer-authenticated",
-            "url": "https://artifacts.company.com/composer-repository.json"
-        }
-    ]
-}
-```
+
+@TODO add description
 
 ## Testing Strategy
 
