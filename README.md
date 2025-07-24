@@ -64,20 +64,26 @@ composer config http-basic.artifacts.company.com username password
 
 ### 2. Use the Authenticated Repository
 
-Replace your standard Composer repositories with authenticated ones:
+Add configuration to composer `extra` section
 
 ```json
 {
-    "repositories": [
+  "extra": {
+    "composer-authenticated-plugin": {
+      "repositories": [
         {
-            "type": "composer-authenticated",
-            "url": "https://api.github.com/repos/your-org/private-packages/contents/composer-repository.json"
+          "owner": "my-org",
+          "name": "private-packages",
+          "url": "https://github.com/my-org/private-packages/releases/composer-repository/composer-repository.json"
         },
         {
-            "type": "composer-authenticated",
-            "url": "https://artifacts.company.com/composer-repository.json"
+          "owner": "my-org",
+          "name": "private-packages-new",
+          "url": "https://artifacts.mycompany.com/composer-repository.json"
         }
-    ]
+      ]
+    }
+  }
 }
 ```
 
@@ -85,35 +91,9 @@ Replace your standard Composer repositories with authenticated ones:
 
 ### 1. Plugin Registration
 
-The plugin registers a new repository type `composer-authenticated` using Composer's capability system:
+The plugin registers a new repository type `composer-authenticated` using Composer's activation composer plugin mechanism for initialization
 
-```php
-public function getCapabilities(): array
-{
-    return [
-        'Composer\Plugin\Capability\RepositoryFactoryProvider' => AuthenticatedRepositoryFactory::class,
-    ];
-}
-```
-
-### 2. Repository Factory
-
-The `AuthenticatedRepositoryFactory` creates authenticated repository instances:
-
-```php
-public function createRepo(array $config, IOInterface $io, Config $composerConfig, HttpDownloader $httpDownloader = null): RepositoryInterface
-{
-    return new AuthenticatedComposerRepository(
-        $composerConfig,
-        $io,
-        $composerConfig,
-        $httpDownloader,
-        $config
-    );
-}
-```
-
-### 3. Authentication Injection
+### 2. Authentication Injection
 
 The `AuthenticatedComposerRepository` wraps the standard Composer repository and injects authentication:
 
@@ -132,7 +112,7 @@ private function createAuthenticatedDownloader(HttpDownloader $httpDownloader, C
 }
 ```
 
-### 4. HTTP Header Injection
+### 3. HTTP Header Injection
 
 The `AuthenticatedHttpDownloader` adds authentication headers to all requests:
 
@@ -154,44 +134,6 @@ public function addAuthenticationHeaders(string $url, array $options): array
 
     $options['http']['header'] = $headers;
     return $options;
-}
-```
-
-## Example Usage
-
-### Complete composer.json Example
-
-```json
-{
-    "name": "my-project",
-    "require": {
-        "php": "^8.0",
-        "my-org/private-package": "^1.0"
-    },
-    "repositories": [
-        {
-            "type": "composer-authenticated",
-            "url": "https://api.github.com/repos/my-org/private-packages/contents/composer-repository.json"
-        },
-        {
-            "type": "composer-authenticated",
-            "url": "https://artifacts.mycompany.com/composer-repository.json"
-        }
-    ],
-    "config": {
-        "allow-plugins": {
-            "sonrac/composer-authenticated-repository-plugin": true
-        },
-        "github-oauth": {
-            "api.github.com": "%env(GITHUB_TOKEN)%"
-        },
-        "http-basic": {
-            "artifacts.mycompany.com": {
-                "username": "%env(ARTIFACT_USERNAME)%",
-                "password": "%env(ARTIFACT_PASSWORD)%"
-            }
-        }
-    }
 }
 ```
 
@@ -294,13 +236,10 @@ composer-authenticated-repository-plugin/
 ├── src/
 │   ├── Plugin.php                          # Main plugin class
 │   └── Repository/
-│       ├── AuthenticatedRepositoryFactory.php  # Repository factory
 │       ├── AuthenticatedComposerRepository.php # Authenticated repository
 │       └── AuthenticatedHttpDownloader.php     # HTTP downloader with auth
 ├── tests/
 │   └── AuthenticatedRepositoryTest.php     # Unit tests
-├── README.md                               # Documentation
-└── LICENSE                                 # MIT License
 ```
 
 ## License
