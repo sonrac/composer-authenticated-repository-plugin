@@ -1,0 +1,41 @@
+{
+    "name": "sonrac/composer-authenticated-repository-plugin",
+    "description": "Composer plugin for authenticated repository access with GitHub tokens and HTTP basic auth",
+    "type": "composer-plugin",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Donii Serhii",
+            "email": "doniysa@gmail.com"
+        }
+    ],
+    "require": {
+        "php": "^8.0",
+        "composer-plugin-api": "^2.0",
+        "composer/composer": "^2.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.0",
+        "phpstan/phpstan": "^1.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Sonrac\\ComposerAuthenticatedRepositoryPlugin\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Sonrac\\ComposerAuthenticatedRepositoryPlugin\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "class": "Sonrac\\ComposerAuthenticatedRepositoryPlugin\\Plugin"
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "scripts": {
+        "test": "phpunit",
+        "test-coverage": "phpunit --coverage-html coverage"
+    }
+}
