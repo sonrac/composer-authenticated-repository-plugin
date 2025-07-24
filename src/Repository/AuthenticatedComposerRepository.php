@@ -13,13 +13,20 @@ class AuthenticatedComposerRepository extends ComposerRepository
 {
     private array $authConfig;
 
+    private string $owner;
+    private string $repoName;
+
     public function __construct(
         array $repoConfig,
         IOInterface $io,
         Config $config,
-        HttpDownloader $httpDownloader = null
+        HttpDownloader $httpDownloader = null,
+        string $owner,
+        string $repoName
     ) {
         $this->authConfig = $repoConfig;
+        $this->owner = $owner;
+        $this->repoName = $repoName;
         
         // Create a custom HTTP downloader with authentication
         $authenticatedDownloader = $this->createAuthenticatedDownloader($httpDownloader, $config);
@@ -44,7 +51,12 @@ class AuthenticatedComposerRepository extends ComposerRepository
             $httpDownloader,
             $githubToken,
             $httpBasicAuth,
-            $this->authConfig
+            [
+                [
+                    'owner' => $this->owner,
+                    'name' => $this->repoName,
+                ]
+            ],
         );
     }
 
