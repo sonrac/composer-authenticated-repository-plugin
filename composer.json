@@ -1,5 +1,5 @@
 {
-    "name": "sonrac/composer-authenticated-repository-plugin",
+    "name": "sonrac/composer-authenticated-repository-plugin-bkp",
     "description": "Composer plugin for authenticated repository access with GitHub tokens and HTTP basic auth",
     "type": "composer-plugin",
     "license": "MIT",
