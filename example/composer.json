@@ -1,0 +1,54 @@
+{
+    "name": "example/project-with-authenticated-repos",
+    "description": "Example project using Composer Authenticated Repository Plugin",
+    "type": "project",
+    "require": {
+        "php": "^8.0",
+        "my-org/private-package": "^1.0",
+        "company/internal-library": "^2.0"
+    },
+    "repositories": [
+        {
+            "type": "composer-authenticated",
+            "url": "https://api.github.com/repos/my-org/private-packages/contents/composer-repository.json"
+        },
+        {
+            "type": "composer-authenticated",
+            "url": "https://artifacts.mycompany.com/composer-repository.json"
+        }
+    ],
+    "config": {
+        "allow-plugins": {
+            "sonrac/composer-authenticated-repository-plugin": true
+        },
+        "github-oauth": {
+            "api.github.com": "%env(GITHUB_TOKEN)%"
+        },
+        "http-basic": {
+            "artifacts.mycompany.com": {
+                "username": "%env(ARTIFACT_USERNAME)%",
+                "password": "%env(ARTIFACT_PASSWORD)%"
+            }
+        },
+        "optimize-autoloader": true,
+        "sort-packages": true
+    },
+    "autoload": {
+        "psr-4": {
+            "Example\\": "src/"
+        }
+    }
+    "autoload-dev": {
+        "psr-4": {
+            "Example\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit",
+        "post-install-cmd": [
+            "echo 'Authenticated repository plugin installed successfully!'"
+        ]
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
