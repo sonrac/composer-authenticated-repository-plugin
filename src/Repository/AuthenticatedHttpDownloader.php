@@ -6,6 +6,9 @@ namespace Sonrac\ComposerAuthenticatedRepositoryPlugin\Repository;
 
 use Composer\Util\HttpDownloader;
 use Composer\Util\Url;
+use Composer\Downloader\TransportException;
+use Error;
+use Throwable;
 
 class AuthenticatedHttpDownloader extends HttpDownloader
 {
@@ -30,7 +33,26 @@ class AuthenticatedHttpDownloader extends HttpDownloader
     {
         $options = $this->addAuthenticationHeaders($url, $options);
 
-        return $this->originalDownloader->get($url, $options);
+        try {
+            return $this->originalDownloader->get($url, $options);
+        } catch (TransportException $exception) {
+            if (!$exception instanceof TransportException || strpos($url, 'github.com') === false) {
+                throw $exception;
+            }
+
+            // Attempt fallback via GitHub API
+            try {
+                $apiUrl = $this->getGitHubAssetApiUrl($url);
+
+                if (!$apiUrl) {
+                    throw new \RuntimeException('Fallback GitHub asset URL not found.');
+                }
+
+                $response = $this->originalDownloader->get($apiUrl, $options);
+            } catch (\Throwable $fallbackEx) {
+                throw $exception;
+            }
+        }
     }
 
     public function add($url, $options = []): void
@@ -53,7 +75,7 @@ class AuthenticatedHttpDownloader extends HttpDownloader
 
         // Add GitHub token if available and URL matches GitHub
         if ($this->githubToken && $this->isGitHubUrl($url)) {
-            $headers[] = 'Authorization: Bearer ' . $this->githubToken;
+            $headers[] = 'Authorization: token ' . $this->githubToken;
         }
 
         // Add HTTP basic auth if available
@@ -67,12 +89,118 @@ class AuthenticatedHttpDownloader extends HttpDownloader
         }
 
         $options['http']['header'] = $headers;
+
+        // Enable redirect following for all requests
+        if (!isset($options['http']['follow_location'])) {
+            $options['http']['follow_location'] = true;
+        }
+        if (!isset($options['http']['max_redirects'])) {
+            $options['http']['max_redirects'] = 5;
+        }
+
         return $options;
     }
 
     private function isGitHubUrl(string $url): bool
     {
         $host = parse_url($url, PHP_URL_HOST);
+
         return $host === 'api.github.com' || $host === 'github.com' || str_ends_with($host, '.github.com');
+    }
+
+    private function getGitHubAssetApiUrl(string $browserUrl): ?string
+    {
+        $url = parse_url($browserUrl);
+        $parts = explode('/', str_replace('/releases/download', '', $url['path']));
+
+        if (count($parts) !== 5) {
+            return null;
+        }
+
+        $owner = $parts[1];
+        $repo = $parts[2];
+        $tag = $parts[3];
+        $filename = $parts[4];
+
+        $releaseApiUrl = "https://api.github.com/repos/{$owner}/{$repo}/releases/tags/{$tag}";
+
+        $headers = [
+            "Authorization: token {$this->githubToken}",
+            "User-Agent: Composer"
+        ];
+
+        $context = stream_context_create([
+            'http' => [
+                'header' => implode("\r\n", $headers),
+                'ignore_errors' => true,
+            ]
+        ]);
+
+        $json = file_get_contents($releaseApiUrl, false, $context);
+        if (!$json) {
+            // Check for HTTP errors
+            $httpResponseHeader = $http_response_header ?? [];
+            $statusLine = $httpResponseHeader[0] ?? '';
+            if (strpos($statusLine, '401') !== false || strpos($statusLine, '403') !== false) {
+                throw new \RuntimeException("GitHub API authentication failed. Please check your GitHub token configuration.");
+            }
+            return null;
+        }
+
+        $data = json_decode($json, true);
+        if (!isset($data['assets'])) {
+            return null;
+        }
+
+        foreach ($data['assets'] as $asset) {
+            if ($asset['name'] === $filename) {
+                // Get the direct download URL by following redirects
+                return $this->getAssetDownloadUrl($owner, $repo, $asset['id']);
+            }
+        }
+
+        return null;
+    }
+
+    private function getAssetDownloadUrl(string $owner, string $repo, int $assetId): string
+    {
+        $apiUrl = "https://api.github.com/repos/{$owner}/{$repo}/releases/assets/{$assetId}";
+        
+        $headers = [
+            "Authorization: token {$this->githubToken}",
+            "User-Agent: Composer",
+            "Accept: application/octet-stream"
+        ];
+
+        $context = stream_context_create([
+            'http' => [
+                'header' => implode("\r\n", $headers),
+                'ignore_errors' => true,
+                'follow_location' => true, // Enable redirect following
+                'max_redirects' => 5
+            ]
+        ]);
+
+        // Make a HEAD request to get the redirect URL
+        $context = stream_context_create([
+            'http' => [
+                'method' => 'HEAD',
+                'header' => implode("\r\n", $headers),
+                'ignore_errors' => true,
+                'follow_location' => true,
+                'max_redirects' => 5
+            ]
+        ]);
+
+        $headers = get_headers($apiUrl, true, $context);
+        
+        if ($headers && isset($headers['Location'])) {
+            // Return the final redirect URL
+            $location = is_array($headers['Location']) ? end($headers['Location']) : $headers['Location'];
+            return $location;
+        }
+
+        // Fallback to the original API URL if no redirect is found
+        return $apiUrl;
     }
 } 

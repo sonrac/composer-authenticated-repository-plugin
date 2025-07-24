@@ -25,17 +25,21 @@ class Plugin implements PluginInterface
         $this->io = $io;
         $extra = $composer->getPackage()->getExtra();
         if (!array_key_exists(self::NAME, $extra)) {
-            throw new RuntimeException(
+            error_log(
                 sprintf('You must set extra params for plugin %s', self::NAME)
             );
+
+            return;
         }
 
         $pluginConfig = $extra[self::NAME];
 
         if (!array_key_exists('repositories', $pluginConfig)) {
-            throw new RuntimeException(
+            error_log(
                 sprintf('You must set repositories for plugin %s', self::NAME)
             );
+
+            return;
         }
 
         $repositoryManager = $composer->getRepositoryManager();
