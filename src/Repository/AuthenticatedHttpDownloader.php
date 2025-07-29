@@ -7,6 +7,7 @@ namespace Sonrac\ComposerAuthenticatedRepositoryPlugin\Repository;
 use Composer\Downloader\TransportException;
 use Composer\Util\Http\Response;
 use Composer\Util\HttpDownloader;
+use React\Promise\PromiseInterface;
 
 class AuthenticatedHttpDownloader extends HttpDownloader
 {
@@ -34,7 +35,7 @@ class AuthenticatedHttpDownloader extends HttpDownloader
         $this->repositories = $repositories;
     }
 
-    public function get($url, $options = [])
+    public function get($url, $options = []): Response
     {
         $options = $this->addAuthenticationHeaders($url, $options);
 
@@ -60,14 +61,20 @@ class AuthenticatedHttpDownloader extends HttpDownloader
         }
     }
 
-    public function add($url, $options = []): void
+    /**
+     * @return PromiseInterface<Response>
+     */
+    public function add($url, $options = []): PromiseInterface
     {
         $options = $this->addAuthenticationHeaders($url, $options);
 
-        $this->originalDownloader->add($url, $options);
+        return $this->originalDownloader->add($url, $options);
     }
 
-    public function addCopy(string $url, string $to, array $options = [])
+    /**
+     * @return PromiseInterface<Response>
+     */
+    public function addCopy(string $url, string $to, array $options = []): PromiseInterface
     {
         $downloadUrl = $url;
         // Check if this is a GitHub release download URL that we should handle
@@ -93,12 +100,12 @@ class AuthenticatedHttpDownloader extends HttpDownloader
         return $this->originalDownloader;
     }
 
-    public function getOptions()
+    public function getOptions(): mixed
     {
         return $this->originalDownloader->getOptions();
     }
 
-    public function setOptions(array $options)
+    public function setOptions(array $options): void
     {
         $this->originalDownloader->setOptions($options);
     }
@@ -314,14 +321,14 @@ class AuthenticatedHttpDownloader extends HttpDownloader
 
         // Check if it's a release download URL pattern
         $path = $parsedUrl['path'];
-        return strpos($path, '/releases/download/') !== false || 
-               strpos($path, '/releases/assets/') !== false;
+        return strpos($path, '/releases/download/') !== false ||
+            strpos($path, '/releases/assets/') !== false;
     }
 
     /**
      * Download GitHub release archive using curl with authentication and redirects
      */
-    private function downloadGitHubReleaseArchive(string $url, string $to, array $options = [])
+    private function downloadGitHubReleaseArchive(string $url, string $to, array $options = []): bool
     {
         // If it's a browser URL, convert to API URL first
         if (strpos($url, '/releases/download/') !== false) {
@@ -333,7 +340,7 @@ class AuthenticatedHttpDownloader extends HttpDownloader
 
         // Get the final download URL with redirects
         $finalUrl = $this->getAssetDownloadUrlWithCurl($url);
-        
+
         // Use curl to download the file with authentication
         return $this->downloadWithCurl($finalUrl, $to, $options);
     }
@@ -382,10 +389,10 @@ class AuthenticatedHttpDownloader extends HttpDownloader
     /**
      * Download file using curl with authentication and redirects
      */
-    private function downloadWithCurl(string $url, string $to, array $options = [])
+    private function downloadWithCurl(string $url, string $to, array $options = []): bool
     {
         $headers = [];
-        
+
         // Add GitHub token if available
         if ($this->githubToken && $this->isGitHubUrl($url)) {
             $headers[] = 'Authorization: token ' . $this->githubToken;
@@ -413,7 +420,7 @@ class AuthenticatedHttpDownloader extends HttpDownloader
         // Use curl to download the file
         $ch = curl_init();
         $fp = fopen($to, 'wb');
-        
+
         curl_setopt_array($ch, [
             CURLOPT_URL => $url,
             CURLOPT_HTTPHEADER => $headers,
@@ -436,7 +443,7 @@ class AuthenticatedHttpDownloader extends HttpDownloader
             if (file_exists($to)) {
                 unlink($to);
             }
-            
+
             throw new \RuntimeException(
                 "Failed to download file from {$url}. HTTP Code: {$httpCode}. Error: {$error}"
             );
