@@ -69,14 +69,20 @@ class AuthenticatedHttpDownloader extends HttpDownloader
 
     public function addCopy(string $url, string $to, array $options = [])
     {
+        $downloadUrl = $url;
         // Check if this is a GitHub release download URL that we should handle
-        if ($this->isGitHubReleaseDownload($url)) {
-            return $this->downloadGitHubReleaseArchive($url, $to, $options);
+        if ($this->isLinkSupported($url) && $this->isGitHubReleaseDownload($url)) {
+            $downloadUrl =  $this->getAssetDownloadUrlWithCurl($url) ?? $downloadUrl;
         }
 
         // For non-GitHub URLs, use the original downloader
         $options = $this->addAuthenticationHeaders($url, $options);
-        return $this->originalDownloader->addCopy($url, $to, $options);
+
+        if ($this->isLinkSupported($url)) {
+            $options['http']['header'][] = 'Accept: application/octet-stream';
+        }
+
+        return $this->originalDownloader->addCopy($downloadUrl, $to, $options);
     }
 
     /**
@@ -129,7 +135,7 @@ class AuthenticatedHttpDownloader extends HttpDownloader
 
         // Add GitHub token if available and URL matches GitHub
         if ($this->githubToken && $this->isGitHubUrl($url)) {
-            $headers[] = 'Authorization: token ' . $this->githubToken;
+            $headers[] = 'Authorization: Bearer ' . $this->githubToken;
         }
 
         // Add HTTP basic auth if available
@@ -165,7 +171,10 @@ class AuthenticatedHttpDownloader extends HttpDownloader
     private function getGitHubAssetApiUrl(string $browserUrl): ?string
     {
         $url = parse_url($browserUrl);
-        $parts = explode('/', str_replace('/releases/download', '', $url['path']));
+        $parts = explode(
+            '/',
+            str_replace('/releases/download', '', $url['path'])
+        );
 
         if (count($parts) !== 5) {
             return null;
@@ -355,6 +364,7 @@ class AuthenticatedHttpDownloader extends HttpDownloader
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HEADER => true,
             CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_RETURNTRANSFER => true,
         ]);
 
         $response = curl_exec($ch);
