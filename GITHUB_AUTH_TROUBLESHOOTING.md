@@ -139,6 +139,15 @@ If you're using this plugin, ensure your `composer.json` includes:
 2. Not interfering with the download manager's async operations
 3. Using Composer's built-in authentication for package downloads
 
+### Issue: Unzip Cannot Find Archive File
+**Cause**: "unzip: cannot find or open /path/to/temp.zip"
+**Solution**: This error occurs when the download process doesn't create the file properly. The plugin now:
+1. Uses curl to download files directly with authentication
+2. Ensures the file is created before returning the promise
+3. Handles GitHub release downloads asynchronously
+4. Creates proper mock response objects
+5. Test with: `php test-async-download.php`
+
 ## Security Best Practices
 
 1. **Use environment variables** instead of hardcoding tokens in files
@@ -188,6 +197,11 @@ If you're using this plugin, ensure your `composer.json` includes:
    php test-curl-download.php
    ```
 
+9. **Test async download functionality**:
+   ```bash
+   php test-async-download.php
+   ```
+
 ## Plugin Updates
 
 The plugin has been updated to:
@@ -201,6 +215,8 @@ The plugin has been updated to:
 - Work with Composer's built-in authentication for package downloads
 - **Use curl for direct GitHub release archive downloads** with authentication and redirect support
 - Bypass Composer's download manager for GitHub assets to avoid async issues
+- **Handle async downloads properly** by creating files before returning promises
+- Ensure downloaded files exist for Composer's unzip process
 
 ## Still Having Issues?
 

@@ -9,6 +9,9 @@ use Composer\Util\Http\Response;
 use Composer\Util\HttpDownloader;
 use React\Promise\PromiseInterface;
 
+use function React\Promise\reject;
+use function React\Promise\resolve;
+
 class AuthenticatedHttpDownloader extends HttpDownloader
 {
     private HttpDownloader $originalDownloader;
@@ -76,10 +79,10 @@ class AuthenticatedHttpDownloader extends HttpDownloader
      */
     public function addCopy(string $url, string $to, array $options = []): PromiseInterface
     {
-        $downloadUrl = $url;
         // Check if this is a GitHub release download URL that we should handle
         if ($this->isLinkSupported($url) && $this->isGitHubReleaseDownload($url)) {
-            $downloadUrl =  $this->getAssetDownloadUrlWithCurl($url) ?? $downloadUrl;
+            // For GitHub releases, download directly and return a resolved promise
+            return $this->downloadGitHubReleaseAsync($url, $to, $options);
         }
 
         // For non-GitHub URLs, use the original downloader
@@ -89,7 +92,7 @@ class AuthenticatedHttpDownloader extends HttpDownloader
             $options['http']['header'][] = 'Accept: application/octet-stream';
         }
 
-        return $this->originalDownloader->addCopy($downloadUrl, $to, $options);
+        return $this->originalDownloader->addCopy($url, $to, $options);
     }
 
     /**
@@ -142,7 +145,7 @@ class AuthenticatedHttpDownloader extends HttpDownloader
 
         // Add GitHub token if available and URL matches GitHub
         if ($this->githubToken && $this->isGitHubUrl($url)) {
-            $headers[] = 'Authorization: Bearer ' . $this->githubToken;
+            $headers[] = 'Authorization: token ' . $this->githubToken;
         }
 
         // Add HTTP basic auth if available
@@ -435,8 +438,8 @@ class AuthenticatedHttpDownloader extends HttpDownloader
         $success = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $error = curl_error($ch);
+
         curl_close($ch);
-        fclose($fp);
 
         if (!$success || $httpCode !== 200) {
             // Clean up the file if download failed
@@ -449,6 +452,46 @@ class AuthenticatedHttpDownloader extends HttpDownloader
             );
         }
 
+        if (strlen($success) !== 0) {
+            file_put_contents($to, $success);
+        }
+
         return true;
+    }
+
+    /**
+     * Download GitHub release archive asynchronously and return a resolved promise
+     */
+    private function downloadGitHubReleaseAsync(string $url, string $to, array $options = []): PromiseInterface
+    {
+        try {
+            // If it's a browser URL, convert to API URL first
+            if (strpos($url, '/releases/download/') !== false) {
+                $apiUrl = $this->getGitHubAssetApiUrl($url);
+                if ($apiUrl) {
+                    $url = $apiUrl;
+                }
+            }
+
+            // Get the final download URL with redirects
+            $finalUrl = $this->getAssetDownloadUrlWithCurl($url);
+
+            // Download the file synchronously (since we need to ensure it exists)
+            $success = $this->downloadWithCurl($finalUrl, $to, $options);
+
+            if (!$success || !is_file($to)) {
+                throw new \RuntimeException("Failed to download GitHub release archive from {$url}");
+            }
+
+            var_dump('File content length', strlen(file_get_contents($to)));
+            // Create a simple response object
+            $response = new Response(['url' => $finalUrl], 200, [], file_get_contents($to));
+
+            // Return a resolved promise
+            return resolve($response);
+        } catch (\Exception $e) {
+            // Return a rejected promise
+            return reject($e);
+        }
     }
 } 

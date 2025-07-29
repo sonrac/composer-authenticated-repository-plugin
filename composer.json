@@ -12,7 +12,8 @@
     "require": {
         "php": "^8.0",
         "composer-plugin-api": "^2.0",
-        "composer/composer": "^2.0"
+        "composer/composer": "^2.0",
+        "sonrac/composer-authenticated-repository-plugin": "^0.2.14"
     },
     "require-dev": {
         "phpunit/phpunit": "^9.0",
@@ -32,7 +33,10 @@
         "class": "Sonrac\\ComposerAuthenticatedRepositoryPlugin\\Plugin"
     },
     "config": {
-        "sort-packages": true
+        "sort-packages": true,
+        "allow-plugins": {
+            "sonrac/composer-authenticated-repository-plugin": true
+        }
     },
     "scripts": {
         "test": "phpunit",
