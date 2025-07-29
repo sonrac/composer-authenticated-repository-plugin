@@ -86,22 +86,22 @@ class Plugin implements PluginInterface, EventSubscriberInterface
         $context = $preFileDownloadEvent->getContext();
 
         // Debug: Log the URL being processed
-        $this->io->write(sprintf('<info>Processing URL: %s</info>', $processedUrl));
+        $this->io->debug(sprintf('<info>Processing URL: %s</info>', $processedUrl));
         
         // Debug: Check if we need auth headers
         $needsAuth = $this->httpDownloader->isNeedAuthHeaders($processedUrl);
-        $this->io->write(sprintf('<info>Needs auth headers: %s</info>', $needsAuth ? 'YES' : 'NO'));
+        $this->io->debug(sprintf('<info>Needs auth headers: %s</info>', $needsAuth ? 'YES' : 'NO'));
 
         // Debug: Check if link is supported for get release link
         $isNeedGetReleaseUrl = $this->httpDownloader->isNeedGetReleaseUrl($processedUrl);
-        $this->io->write(
+        $this->io->debug(
             sprintf('<info>Link supported for get asset download url: %s</info>', $isNeedGetReleaseUrl ? 'YES' : 'NO'),
         );
 
         // Debug: Show configured repositories
         $extra = $this->composer->getPackage()->getExtra();
         $pluginConfig = $extra[self::NAME] ?? ['repositories' => []];
-        $this->io->write(sprintf('<info>Configured repositories: %s</info>', json_encode($pluginConfig['repositories'])));
+        $this->io->debug(sprintf('<info>Configured repositories: %s</info>', json_encode($pluginConfig['repositories'])));
 
         if ($needsAuth) {
             if ($isNeedGetReleaseUrl) {
@@ -109,7 +109,7 @@ class Plugin implements PluginInterface, EventSubscriberInterface
 
                 if ($assetUrl !== null) {
                     $preFileDownloadEvent->setProcessedUrl($assetUrl);
-                    $this->io->write(
+                    $this->io->debug(
                         sprintf('<info>Converted to asset URL: from %s to %s</info>', $processedUrl, $assetUrl)
                     );
                 }
