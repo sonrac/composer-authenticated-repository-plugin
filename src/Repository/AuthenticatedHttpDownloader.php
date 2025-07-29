@@ -506,8 +506,6 @@ class AuthenticatedHttpDownloader extends HttpDownloader
 
                 // Add User-Agent and Accept headers
                 $headers[] = 'User-Agent: Composer';
-//                $headers[] = 'Accept: application/octet-stream';
-//                $headers[] = 'Accept: application/zip';
 
                 // Use curl multi handle for async download
                 $mh = curl_multi_init();
