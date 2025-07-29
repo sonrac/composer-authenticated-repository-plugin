@@ -8,10 +8,8 @@ use Composer\Downloader\TransportException;
 use Composer\IO\IOInterface;
 use Composer\Util\Http\Response;
 use Composer\Util\HttpDownloader;
+use React\Promise\Promise;
 use React\Promise\PromiseInterface;
-
-use function React\Promise\reject;
-use function React\Promise\resolve;
 
 class AuthenticatedHttpDownloader extends HttpDownloader
 {
@@ -19,7 +17,6 @@ class AuthenticatedHttpDownloader extends HttpDownloader
     private ?string $githubToken;
     private ?array $httpBasicAuth;
     private IOInterface $io;
-    private bool $enableForceDownloadWiaPlugin;
 
     /**
      * @var array<int, array{url: string, owner: string, name: string}> $repositories
@@ -35,14 +32,12 @@ class AuthenticatedHttpDownloader extends HttpDownloader
         ?array $httpBasicAuth,
         array $repositories,
         IOInterface $io,
-        bool $enableForceDownloadWiaPlugin = false,
     ) {
         $this->originalDownloader = $originalDownloader;
         $this->githubToken = $githubToken;
         $this->httpBasicAuth = $httpBasicAuth;
         $this->repositories = $repositories;
         $this->io = $io;
-        $this->enableForceDownloadWiaPlugin = $enableForceDownloadWiaPlugin;
     }
 
     public function get($url, $options = []): Response
@@ -64,7 +59,7 @@ class AuthenticatedHttpDownloader extends HttpDownloader
             $apiUrl = $this->getGitHubAssetApiUrl($url);
 
             if (!$apiUrl) {
-                throw new \RuntimeException('Fallback GitHub asset URL not found.');
+                throw new \RuntimeException('Fallback GitHub asset URL not found from asset url ' . $url);
             }
 
             return $this->originalDownloader->get($apiUrl, $options);
@@ -87,41 +82,31 @@ class AuthenticatedHttpDownloader extends HttpDownloader
     public function addCopy(string $url, string $to, array $options = []): PromiseInterface
     {
         // Check if this is a GitHub release download URL that we should handle
-        if (
-            $this->enableForceDownloadWiaPlugin === true ||
-            ($this->isLinkSupported($url) && $this->isGitHubReleaseDownload($url))
-        ) {
+        if (($this->isLinkSupported($url) && $this->isGitHubReleaseDownload($url))) {
+            // For non-GitHub URLs, use the original downloader
+            $options = $this->addAuthenticationHeaders($url, $options);
+
+            if ($this->isLinkSupported($url)) {
+                $options['http']['header'][] = 'Accept: application/octet-stream';
+
+                $this->io->warning(
+                    sprintf('Fallback Download %s from dist with authorization headers', $url),
+                );
+            }
+
             $this->io->warning(
                 sprintf('Download %s from dist with plugin composer-authenticated-repository-plugin', $url),
             );
+
             // For GitHub releases, download directly and return a resolved promise
             return $this->downloadGitHubReleaseAsync($url, $to, $options);
         }
 
-        $this->io->warning(
+        $this->io->info(
             sprintf('Fallback Download %s', $url),
         );
 
-        // For non-GitHub URLs, use the original downloader
-        $options = $this->addAuthenticationHeaders($url, $options);
-
-        if ($this->isLinkSupported($url)) {
-            $options['http']['header'][] = 'Accept: application/octet-stream';
-
-            $this->io->warning(
-                sprintf('Fallback Download %s from dist with authorization headers', $url),
-            );
-        }
-
         return $this->originalDownloader->addCopy($url, $to, $options);
-    }
-
-    /**
-     * @return HttpDownloader
-     */
-    public function getOriginalDownloader(): HttpDownloader
-    {
-        return $this->originalDownloader;
     }
 
     public function getOptions(): mixed
@@ -156,9 +141,9 @@ class AuthenticatedHttpDownloader extends HttpDownloader
         $this->originalDownloader->wait($index);
     }
 
-    public function addAuthenticationHeaders(string $url, array $options): array
+    public function addAuthenticationHeaders(string $url, array $options, ?string $acceptType = null): array
     {
-        if ($this->isLinkSupported($url) === false) {
+        if ($this->isNeedAuthHeaders($url) === false) {
             return $options;
         }
 
@@ -167,6 +152,10 @@ class AuthenticatedHttpDownloader extends HttpDownloader
         // Add GitHub token if available and URL matches GitHub
         if ($this->githubToken && $this->isGitHubUrl($url)) {
             $headers[] = 'Authorization: token ' . $this->githubToken;
+        }
+
+        if ($acceptType !== null) {
+            $headers[] = 'Accept: ' . $acceptType;
         }
 
         // Add HTTP basic auth if available
@@ -192,22 +181,35 @@ class AuthenticatedHttpDownloader extends HttpDownloader
         return $options;
     }
 
-    private function isGitHubUrl(string $url): bool
+    public function isGitHubUrl(string $url): bool
     {
         $host = parse_url($url, PHP_URL_HOST);
 
         return $host === 'api.github.com' || $host === 'github.com' || str_ends_with($host, '.github.com');
     }
 
-    private function getGitHubAssetApiUrl(string $browserUrl): ?string
+    public function getGitHubAssetApiUrl(string $browserUrl): ?string
     {
         $url = parse_url($browserUrl);
         $parts = explode(
             '/',
-            str_replace('/releases/download', '', $url['path'])
+            str_replace(
+                [
+                    '/releases/download',
+                    '/repos',
+                ],
+                '',
+                $url['path'],
+            ),
         );
 
-        if (count($parts) !== 5) {
+        $parts = array_filter($parts, static function (string $value): bool {
+            return strlen($value) > 0;
+        });
+
+        if (count($parts) < 4) {
+            $this->io->debug(sprintf('Parts is invalid %s %s', json_encode($parts), $url['path']));
+
             return null;
         }
 
@@ -232,6 +234,7 @@ class AuthenticatedHttpDownloader extends HttpDownloader
 
         $json = file_get_contents($releaseApiUrl, false, $context);
         if (!$json) {
+            $this->io->error('Invalid response from github');
             // Check for HTTP errors
             $httpResponseHeader = $http_response_header ?? [];
             $statusLine = $httpResponseHeader[0] ?? '';
@@ -240,10 +243,12 @@ class AuthenticatedHttpDownloader extends HttpDownloader
                     "GitHub API authentication failed. Please check your GitHub token configuration.",
                 );
             }
+
             return null;
         }
 
         $data = json_decode($json, true);
+
         if (!isset($data['assets'])) {
             return null;
         }
@@ -258,19 +263,27 @@ class AuthenticatedHttpDownloader extends HttpDownloader
         return null;
     }
 
-    private function isLinkSupported(string $url): bool
+    public function isLinkSupported(string $url, array $replacePatterns = ['/releases/download']): bool
     {
-        $url = parse_url($url);
+        if (count($this->repositories) === 0) {
+            $this->io->info('Empty repositories list. Skip');
+
+            return false;
+        }
+
+        $urlParts = parse_url($url);
         $parts = explode(
             '/',
             str_replace(
-                ['/releases/download', '/repos'],
+                $replacePatterns,
                 '',
-                $url['path'],
+                $urlParts['path'],
             ),
         );
 
         if (count($parts) < 5) {
+            $this->io->info(sprintf('Invalid parts %s for url %s', json_encode($parts), $url));
+
             return false;
         }
 
@@ -283,10 +296,22 @@ class AuthenticatedHttpDownloader extends HttpDownloader
             }
         }
 
+        $this->io->debug('Not matched with config repository ' . $url);
         return false;
     }
 
-    private function getAssetDownloadUrl(string $owner, string $repo, int $assetId): string
+    public function isNeedAuthHeaders(string $url): bool
+    {
+        return $this->isLinkSupported(
+            $url,
+            [
+                '/releases/download',
+                '/repos',
+            ],
+        );
+    }
+
+    public function getAssetDownloadUrl(string $owner, string $repo, int $assetId): string
     {
         $apiUrl = "https://api.github.com/repos/{$owner}/{$repo}/releases/assets/{$assetId}";
 
@@ -321,7 +346,7 @@ class AuthenticatedHttpDownloader extends HttpDownloader
     /**
      * Check if the URL is a GitHub release download URL
      */
-    private function isGitHubReleaseDownload(string $url): bool
+    public function isGitHubReleaseDownload(string $url): bool
     {
         $parsedUrl = parse_url($url);
         if (!$parsedUrl || !isset($parsedUrl['host']) || !isset($parsedUrl['path'])) {
@@ -342,7 +367,7 @@ class AuthenticatedHttpDownloader extends HttpDownloader
     /**
      * Get the final download URL for a GitHub asset
      */
-    private function getAssetDownloadUrlWithCurl(string $apiUrl): string
+    public function getAssetDownloadUrlWithCurl(string $apiUrl): string
     {
         if (!$this->githubToken) {
             return $apiUrl;
@@ -381,91 +406,13 @@ class AuthenticatedHttpDownloader extends HttpDownloader
     }
 
     /**
-     * Download file using curl with authentication and redirects
-     */
-    private function downloadWithCurl(string $url, string $to, array $options = []): bool
-    {
-        $headers = [];
-
-        // Add GitHub token if available
-        if ($this->githubToken && $this->isGitHubUrl($url)) {
-            $headers[] = 'Authorization: token ' . $this->githubToken;
-        }
-
-        // Add HTTP basic auth if available
-        if ($this->httpBasicAuth) {
-            $username = $this->httpBasicAuth[0] ?? '';
-            $password = $this->httpBasicAuth[1] ?? '';
-            if ($username && $password) {
-                $auth = base64_encode($username . ':' . $password);
-                $headers[] = 'Authorization: Basic ' . $auth;
-            }
-        }
-
-        // Add User-Agent
-        $headers[] = 'User-Agent: Composer';
-
-        // Create directory if it doesn't exist
-        $dir = dirname($to);
-        if (!is_dir($dir)) {
-            mkdir($dir, 0755, true);
-        }
-
-        // Use curl to download the file
-        $ch = curl_init();
-        $fp = fopen($to, 'wb');
-
-        curl_setopt_array($ch, [
-            CURLOPT_URL => $url,
-            CURLOPT_HTTPHEADER => $headers,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_MAXREDIRS => 5,
-            CURLOPT_FILE => $fp,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_TIMEOUT => 300, // 5 minutes timeout
-        ]);
-
-        $success = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $error = curl_error($ch);
-
-        curl_close($ch);
-
-        if (!$success || $httpCode !== 200) {
-            // Clean up the file if download failed
-            if (file_exists($to)) {
-                unlink($to);
-            }
-
-            throw new \RuntimeException(
-                "Failed to download file from {$url}. HTTP Code: {$httpCode}. Error: {$error}"
-            );
-        }
-
-        $this->io->debug(
-            sprintf('Downloaded %s content size is %d', $url, strlen($success)),
-        );
-
-        if (strlen($success) !== 0) {
-            $this->io->debug(
-                sprintf('Downloaded %s archive saved to %s', $url, $to),
-            );
-
-            file_put_contents($to, $success);
-        }
-
-        return true;
-    }
-
-    /**
      * Download GitHub release archive asynchronously using React PHP promises
      */
-    private function downloadGitHubReleaseAsync(string $url, string $to, array $options = []): PromiseInterface
+    public function downloadGitHubReleaseAsync(string $url, string $to, array $options = []): PromiseInterface
     {
         $this->io->debug(sprintf('Starting async GitHub release download: %s to %s', $url, $to));
-        
-        return new \React\Promise\Promise(function (callable $resolve, callable $reject) use ($url, $to, $options) {
+
+        return new Promise(function (callable $resolve, callable $reject) use ($url, $to, $options) {
             try {
                 // If it's a browser URL, convert to API URL first
                 if (strpos($url, '/releases/download/') !== false) {
@@ -504,7 +451,7 @@ class AuthenticatedHttpDownloader extends HttpDownloader
                     }
                 }
 
-                // Add User-Agent and Accept headers
+                // Add User-Agent
                 $headers[] = 'User-Agent: Composer';
 
                 // Use curl multi handle for async download
