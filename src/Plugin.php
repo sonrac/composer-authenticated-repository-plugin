@@ -101,8 +101,6 @@ class Plugin implements PluginInterface
     }
 
     /**
-     * Intercept the download manager to handle ZIP file downloads with authentication
-     *
      * @param array{repositories: array<int, array{url: string, owner: string, name: string}>} $pluginConfig
      */
     private function interceptDownloadManager(array $pluginConfig): void
@@ -120,6 +118,7 @@ class Plugin implements PluginInterface
             $githubToken,
             $httpBasicAuth,
             $pluginConfig['repositories'],
+            $this->io
         );
 
         /** @var ZipDownloader $zipDownloader */
@@ -130,7 +129,6 @@ class Plugin implements PluginInterface
         try {
             $reflection = new \ReflectionClass($zipDownloader);
             $httpDownloaderProperty = $reflection->getProperty('httpDownloader');
-            $originDownloadManager = $httpDownloaderProperty->getValue($zipDownloader);
             $httpDownloaderProperty->setAccessible(true);
             $httpDownloaderProperty->setValue($zipDownloader, $authenticatedDownloader);
             $downloadManager->setDownloader('zip', $zipDownloader);
@@ -152,7 +150,6 @@ class Plugin implements PluginInterface
                 /** @var DownloadManager $installerHttpDownloader */
                 $installerHttpDownloader = $downloaderProp->getValue($installer);
 
-                $libDownloadManager = new \ReflectionClass($installerHttpDownloader);
                 $installerHttpDownloader->setDownloader('zip', $zipDownloader);
             }
         }

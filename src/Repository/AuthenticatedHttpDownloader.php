@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Sonrac\ComposerAuthenticatedRepositoryPlugin\Repository;
 
 use Composer\Downloader\TransportException;
+use Composer\IO\IOInterface;
 use Composer\Util\Http\Response;
 use Composer\Util\HttpDownloader;
 use React\Promise\PromiseInterface;
@@ -17,6 +18,7 @@ class AuthenticatedHttpDownloader extends HttpDownloader
     private HttpDownloader $originalDownloader;
     private ?string $githubToken;
     private ?array $httpBasicAuth;
+    private IOInterface $io;
 
     /**
      * @var array<int, array{url: string, owner: string, name: string}> $repositories
@@ -31,11 +33,13 @@ class AuthenticatedHttpDownloader extends HttpDownloader
         ?string $githubToken,
         ?array $httpBasicAuth,
         array $repositories,
+        IOInterface $io,
     ) {
         $this->originalDownloader = $originalDownloader;
         $this->githubToken = $githubToken;
         $this->httpBasicAuth = $httpBasicAuth;
         $this->repositories = $repositories;
+        $this->io = $io;
     }
 
     public function get($url, $options = []): Response
@@ -49,7 +53,7 @@ class AuthenticatedHttpDownloader extends HttpDownloader
         try {
             return $this->originalDownloader->get($url, $options);
         } catch (TransportException $exception) {
-            if (!$exception instanceof TransportException || strpos($url, 'github.com') === false) {
+            if (!str_contains($url, 'github.com')) {
                 throw $exception;
             }
 
@@ -81,9 +85,16 @@ class AuthenticatedHttpDownloader extends HttpDownloader
     {
         // Check if this is a GitHub release download URL that we should handle
         if ($this->isLinkSupported($url) && $this->isGitHubReleaseDownload($url)) {
+            $this->io->debug(
+                sprintf('Download %s from dist', $url),
+            );
             // For GitHub releases, download directly and return a resolved promise
             return $this->downloadGitHubReleaseAsync($url, $to, $options);
         }
+
+        $this->io->debug(
+            sprintf('Fallback Download %s from dist with authorization headers', $url),
+        );
 
         // For non-GitHub URLs, use the original downloader
         $options = $this->addAuthenticationHeaders($url, $options);
@@ -275,15 +286,6 @@ class AuthenticatedHttpDownloader extends HttpDownloader
             "Accept: application/octet-stream",
         ];
 
-        $context = stream_context_create([
-            'http' => [
-                'header' => implode("\r\n", $headers),
-                'ignore_errors' => true,
-                'follow_location' => true, // Enable redirect following
-                'max_redirects' => 5,
-            ],
-        ]);
-
         // Make a HEAD request to get the redirect URL
         $context = stream_context_create([
             'http' => [
@@ -299,8 +301,7 @@ class AuthenticatedHttpDownloader extends HttpDownloader
 
         if ($headers && isset($headers['Location'])) {
             // Return the final redirect URL
-            $location = is_array($headers['Location']) ? end($headers['Location']) : $headers['Location'];
-            return $location;
+            return is_array($headers['Location']) ? end($headers['Location']) : $headers['Location'];
         }
 
         // Fallback to the original API URL if no redirect is found
@@ -326,26 +327,6 @@ class AuthenticatedHttpDownloader extends HttpDownloader
         $path = $parsedUrl['path'];
         return strpos($path, '/releases/download/') !== false ||
             strpos($path, '/releases/assets/') !== false;
-    }
-
-    /**
-     * Download GitHub release archive using curl with authentication and redirects
-     */
-    private function downloadGitHubReleaseArchive(string $url, string $to, array $options = []): bool
-    {
-        // If it's a browser URL, convert to API URL first
-        if (strpos($url, '/releases/download/') !== false) {
-            $apiUrl = $this->getGitHubAssetApiUrl($url);
-            if ($apiUrl) {
-                $url = $apiUrl;
-            }
-        }
-
-        // Get the final download URL with redirects
-        $finalUrl = $this->getAssetDownloadUrlWithCurl($url);
-
-        // Use curl to download the file with authentication
-        return $this->downloadWithCurl($finalUrl, $to, $options);
     }
 
     /**
@@ -452,7 +433,15 @@ class AuthenticatedHttpDownloader extends HttpDownloader
             );
         }
 
+        $this->io->debug(
+            sprintf('Downloaded %s content size is %d', $url, strlen($success)),
+        );
+
         if (strlen($success) !== 0) {
+            $this->io->debug(
+                sprintf('Downloaded %s archive saved to %s', $url, $to),
+            );
+
             file_put_contents($to, $success);
         }
 
