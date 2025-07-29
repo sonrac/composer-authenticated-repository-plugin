@@ -28,13 +28,13 @@ final class AuthenticationHttpDownloaderTest extends TestCase
         );
 
         $this->assertFalse(
-            $downloader->isLinkSupported(
+            $downloader->isNeedGetReleaseUrl(
                 'https://api.github.com/repos/some-org/some-repo/releases/assets/275933430'
             ),
         );
 
         $this->assertTrue(
-            $downloader->isLinkSupported(
+            $downloader->isNeedGetReleaseUrl(
                 'https://github.com/some-org/some-repo/releases/download/composer-repository/composer-repository.json'
             ),
         );
@@ -64,13 +64,13 @@ final class AuthenticationHttpDownloaderTest extends TestCase
         );
 
         $this->assertFalse(
-            $downloader->isLinkSupported(
+            $downloader->isNeedGetReleaseUrl(
                 'https://api.github.com/repos/some-org/some-repo/releases/assets/123'
             ),
         );
 
         $this->assertFalse(
-            $downloader->isLinkSupported(
+            $downloader->isNeedGetReleaseUrl(
                 'https://github.com/some-org/some-repo/releases/download/'.
                 'composer-repository/composer-repository.json'
             ),

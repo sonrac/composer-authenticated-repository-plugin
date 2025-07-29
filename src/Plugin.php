@@ -68,9 +68,6 @@ class Plugin implements PluginInterface, EventSubscriberInterface
 
         $repositoryManager = $composer->getRepositoryManager();
         $this->registerRepositoryType($repositoryManager, $pluginConfig);
-
-        // Also intercept the download manager to handle ZIP file downloads
-        $this->interceptDownloadManager($pluginConfig);
     }
 
     public function deactivate(Composer $composer, IOInterface $io): void
@@ -87,45 +84,66 @@ class Plugin implements PluginInterface, EventSubscriberInterface
     {
         $processedUrl = $preFileDownloadEvent->getProcessedUrl();
         $context = $preFileDownloadEvent->getContext();
-        $transportOptions = [];
 
-        if (
-            $this->httpDownloader->isNeedAuthHeaders($processedUrl)
-        ) {
-            if ($this->httpDownloader->isLinkSupported($processedUrl)) {
+        // Debug: Log the URL being processed
+        $this->io->write(sprintf('<info>Processing URL: %s</info>', $processedUrl));
+        
+        // Debug: Check if we need auth headers
+        $needsAuth = $this->httpDownloader->isNeedAuthHeaders($processedUrl);
+        $this->io->write(sprintf('<info>Needs auth headers: %s</info>', $needsAuth ? 'YES' : 'NO'));
+
+        // Debug: Check if link is supported for get release link
+        $isNeedGetReleaseUrl = $this->httpDownloader->isNeedGetReleaseUrl($processedUrl);
+        $this->io->write(
+            sprintf('<info>Link supported for get asset download url: %s</info>', $isNeedGetReleaseUrl ? 'YES' : 'NO'),
+        );
+
+        // Debug: Show configured repositories
+        $extra = $this->composer->getPackage()->getExtra();
+        $pluginConfig = $extra[self::NAME] ?? ['repositories' => []];
+        $this->io->write(sprintf('<info>Configured repositories: %s</info>', json_encode($pluginConfig['repositories'])));
+
+        if ($needsAuth) {
+            if ($isNeedGetReleaseUrl) {
                 $assetUrl = $this->httpDownloader->getGitHubAssetApiUrl($processedUrl);
 
                 if ($assetUrl !== null) {
                     $preFileDownloadEvent->setProcessedUrl($assetUrl);
+                    $this->io->write(
+                        sprintf('<info>Converted to asset URL: from %s to %s</info>', $processedUrl, $assetUrl)
+                    );
                 }
             }
 
+            $transportOptions = [
+                'http' => [
+                    'header' => [
+                        'Accept: application/octet-stream',
+                    ],
+                ],
+            ];
+
             if ($context instanceof PackageInterface) {
-                $transportOptions = $this->httpDownloader->addAuthenticationHeaders(
-                    $processedUrl,
-                    $context->getTransportOptions(),
-                    'application/zip'
+                $context->setTransportOptions(
+                    array_merge(
+                        $context->getTransportOptions(),
+                        $transportOptions,
+                    ),
                 );
             }
 
-            var_dump(get_class($context), $processedUrl, $context instanceof PackageInterface);
-            var_dump($this->httpDownloader->addAuthenticationHeaders(
-                $processedUrl,
-                $context->getTransportOptions()
-            ));
-
-            var_dump('Transport options', $transportOptions);
-        }
-
-        if (count($transportOptions) > 0) {
-            $metadataOptions = $preFileDownloadEvent->getTransportOptions();
             $preFileDownloadEvent->setTransportOptions(
-                array_merge($metadataOptions, $transportOptions)
+                array_merge(
+                    $preFileDownloadEvent->getTransportOptions(),
+                    $transportOptions,
+                ),
             );
 
-            if ($context instanceof PackageInterface) {
-                $context->setTransportOptions($transportOptions);
-            }
+            $this->io->debug('Context class' . get_class($context));
+            $this->io->debug('Processed url' . $processedUrl);
+            $this->io->debug('Is package context: ' .  $context instanceof PackageInterface ? 'YES' : 'NO');
+        } else {
+            $this->io->info('URL does not need auth headers - this might be the issue!');
         }
     }
 
@@ -153,48 +171,6 @@ class Plugin implements PluginInterface, EventSubscriberInterface
 
             $repositoryManager->prependRepository($repository);
         }
-    }
-
-    /**
-     * @param array{repositories: array<int, array{url: string, owner: string, name: string, force_download_via_plugin: bool}>} $pluginConfig
-     */
-    private function interceptDownloadManager(array $pluginConfig): void
-    {
-        /** @var DownloadManager $downloadManager */
-        $downloadManager = $this->composer->getDownloadManager();
-
-//        /** @var ZipDownloader $zipDownloader */
-//        $zipDownloader = $downloadManager->getDownloader('zip');
-//        $authenticatedDownloader->enableAsync();
-//
-//        // Replace the download manager's HTTP downloader using reflection
-//        try {
-//            $reflection = new \ReflectionClass($zipDownloader);
-//            $httpDownloaderProperty = $reflection->getProperty('httpDownloader');
-//            $httpDownloaderProperty->setAccessible(true);
-//            $httpDownloaderProperty->setValue($zipDownloader, $authenticatedDownloader);
-//            $downloadManager->setDownloader('zip', $zipDownloader);
-//        } catch (\ReflectionException $e) {
-//            // If reflection fails, log the error but don't break the plugin
-//            error_log('Failed to intercept download manager: ' . $e->getMessage());
-//        }
-
-//        $installationManager = $this->composer->getInstallationManager();
-//        $reflection = new ReflectionClass($installationManager);
-//        $prop = $reflection->getProperty('installers');
-//        $prop->setAccessible(true);
-//        $installers = $prop->getValue($installationManager);
-//        foreach ($installers as $installer) {
-//            if ($installer instanceof LibraryInstaller && !$installer instanceof PluginInstaller) {
-//                $reflection = new ReflectionClass($installer);
-//                $downloaderProp = $reflection->getProperty('downloadManager');
-//                $downloaderProp->setAccessible(true);
-//                /** @var DownloadManager $installerHttpDownloader */
-//                $installerHttpDownloader = $downloaderProp->getValue($installer);
-//
-//                $installerHttpDownloader->setDownloader('zip', $zipDownloader);
-//            }
-//        }
     }
 
     private function getGitHubToken(): ?string

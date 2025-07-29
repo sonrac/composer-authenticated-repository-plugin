@@ -44,7 +44,7 @@ class AuthenticatedHttpDownloader extends HttpDownloader
     {
         $options = $this->addAuthenticationHeaders($url, $options);
 
-        if ($this->isLinkSupported($url) === false) {
+        if ($this->isNeedGetReleaseUrl($url) === false) {
             return $this->originalDownloader->get($url, $options);
         }
 
@@ -82,11 +82,11 @@ class AuthenticatedHttpDownloader extends HttpDownloader
     public function addCopy(string $url, string $to, array $options = []): PromiseInterface
     {
         // Check if this is a GitHub release download URL that we should handle
-        if (($this->isLinkSupported($url) && $this->isGitHubReleaseDownload($url))) {
+        if (($this->isNeedGetReleaseUrl($url) && $this->isGitHubReleaseDownload($url))) {
             // For non-GitHub URLs, use the original downloader
             $options = $this->addAuthenticationHeaders($url, $options);
 
-            if ($this->isLinkSupported($url)) {
+            if ($this->isNeedGetReleaseUrl($url)) {
                 $options['http']['header'][] = 'Accept: application/octet-stream';
 
                 $this->io->warning(
@@ -143,7 +143,10 @@ class AuthenticatedHttpDownloader extends HttpDownloader
 
     public function addAuthenticationHeaders(string $url, array $options, ?string $acceptType = null): array
     {
+        $this->io->debug(sprintf('Adding auth headers for URL: %s', $url));
+        
         if ($this->isNeedAuthHeaders($url) === false) {
+            $this->io->debug('URL does not need auth headers');
             return $options;
         }
 
@@ -152,10 +155,16 @@ class AuthenticatedHttpDownloader extends HttpDownloader
         // Add GitHub token if available and URL matches GitHub
         if ($this->githubToken && $this->isGitHubUrl($url)) {
             $headers[] = 'Authorization: token ' . $this->githubToken;
+            $this->io->debug('Added GitHub token authorization header');
+        } else {
+            $this->io->debug(sprintf('GitHub token available: %s, is GitHub URL: %s', 
+                $this->githubToken ? 'YES' : 'NO', 
+                $this->isGitHubUrl($url) ? 'YES' : 'NO'));
         }
 
         if ($acceptType !== null) {
             $headers[] = 'Accept: ' . $acceptType;
+            $this->io->debug(sprintf('Added Accept header: %s', $acceptType));
         }
 
         // Add HTTP basic auth if available
@@ -165,6 +174,7 @@ class AuthenticatedHttpDownloader extends HttpDownloader
             if ($username && $password) {
                 $auth = base64_encode($username . ':' . $password);
                 $headers[] = 'Authorization: Basic ' . $auth;
+                $this->io->debug('Added HTTP Basic auth header');
             }
         }
 
@@ -177,6 +187,8 @@ class AuthenticatedHttpDownloader extends HttpDownloader
         if (!isset($options['http']['max_redirects'])) {
             $options['http']['max_redirects'] = 5;
         }
+
+        $this->io->debug(sprintf('Final headers: %s', json_encode($headers)));
 
         return $options;
     }
@@ -263,7 +275,7 @@ class AuthenticatedHttpDownloader extends HttpDownloader
         return null;
     }
 
-    public function isLinkSupported(string $url, array $replacePatterns = ['/releases/download']): bool
+    public function isNeedGetReleaseUrl(string $url, array $replacePatterns = ['/releases/download']): bool
     {
         if (count($this->repositories) === 0) {
             $this->io->info('Empty repositories list. Skip');
@@ -272,6 +284,8 @@ class AuthenticatedHttpDownloader extends HttpDownloader
         }
 
         $urlParts = parse_url($url);
+        $this->io->debug(sprintf('URL parts: %s', json_encode($urlParts)));
+        
         $parts = explode(
             '/',
             str_replace(
@@ -281,17 +295,24 @@ class AuthenticatedHttpDownloader extends HttpDownloader
             ),
         );
 
+        $this->io->debug(sprintf('Parts after replacement: %s', json_encode($parts)));
+
         if (count($parts) < 5) {
             $this->io->info(sprintf('Invalid parts %s for url %s', json_encode($parts), $url));
 
             return false;
         }
 
+        $this->io->debug(sprintf('Looking for owner: %s, name: %s for url %s', $parts[1], $parts[2], $url));
+
         foreach ($this->repositories as $repository) {
+            $this->io->debug(sprintf('Checking against repository: %s/%s', $repository['owner'], $repository['name']));
+            
             if (
                 strtolower($repository['owner']) === strtolower($parts[1]) &&
                 strtolower($repository['name']) === strtolower($parts[2])
             ) {
+                $this->io->debug('Repository matched!');
                 return true;
             }
         }
@@ -302,7 +323,7 @@ class AuthenticatedHttpDownloader extends HttpDownloader
 
     public function isNeedAuthHeaders(string $url): bool
     {
-        return $this->isLinkSupported(
+        return $this->isNeedGetReleaseUrl(
             $url,
             [
                 '/releases/download',
