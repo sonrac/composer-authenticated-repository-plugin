@@ -459,38 +459,147 @@ class AuthenticatedHttpDownloader extends HttpDownloader
     }
 
     /**
-     * Download GitHub release archive asynchronously and return a resolved promise
+     * Download GitHub release archive asynchronously using React PHP promises
      */
     private function downloadGitHubReleaseAsync(string $url, string $to, array $options = []): PromiseInterface
     {
-        try {
-            // If it's a browser URL, convert to API URL first
-            if (strpos($url, '/releases/download/') !== false) {
-                $apiUrl = $this->getGitHubAssetApiUrl($url);
-                if ($apiUrl) {
-                    $url = $apiUrl;
+        $this->io->debug(sprintf('Starting async GitHub release download: %s to %s', $url, $to));
+        
+        return new \React\Promise\Promise(function (callable $resolve, callable $reject) use ($url, $to, $options) {
+            try {
+                // If it's a browser URL, convert to API URL first
+                if (strpos($url, '/releases/download/') !== false) {
+                    $apiUrl = $this->getGitHubAssetApiUrl($url);
+                    if ($apiUrl) {
+                        $url = $apiUrl;
+                    }
                 }
+
+                // Get the final download URL with redirects
+                $finalUrl = $this->getAssetDownloadUrlWithCurl($url);
+                
+                $this->io->debug(sprintf('Final download URL: %s', $finalUrl));
+
+                // Create directory if it doesn't exist
+                $dir = dirname($to);
+                if (!is_dir($dir)) {
+                    mkdir($dir, 0755, true);
+                }
+
+                // Prepare headers
+                $headers = [];
+                
+                // Add GitHub token if available
+                if ($this->githubToken && $this->isGitHubUrl($finalUrl)) {
+                    $headers[] = 'Authorization: token ' . $this->githubToken;
+                }
+
+                // Add HTTP basic auth if available
+                if ($this->httpBasicAuth) {
+                    $username = $this->httpBasicAuth[0] ?? '';
+                    $password = $this->httpBasicAuth[1] ?? '';
+                    if ($username && $password) {
+                        $auth = base64_encode($username . ':' . $password);
+                        $headers[] = 'Authorization: Basic ' . $auth;
+                    }
+                }
+
+                // Add User-Agent and Accept headers
+                $headers[] = 'User-Agent: Composer';
+//                $headers[] = 'Accept: application/octet-stream';
+//                $headers[] = 'Accept: application/zip';
+
+                // Use curl multi handle for async download
+                $mh = curl_multi_init();
+                $ch = curl_init();
+                
+                curl_setopt_array($ch, [
+                    CURLOPT_URL => $finalUrl,
+                    CURLOPT_HTTPHEADER => $headers,
+                    CURLOPT_FOLLOWLOCATION => true,
+                    CURLOPT_MAXREDIRS => 5,
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_SSL_VERIFYPEER => true,
+                    CURLOPT_TIMEOUT => 300, // 5 minutes timeout
+                    CURLOPT_NOSIGNAL => true, // Prevent blocking
+                ]);
+
+                curl_multi_add_handle($mh, $ch);
+
+                // Async download loop
+                $active = null;
+                do {
+                    $mrc = curl_multi_exec($mh, $active);
+                } while ($mrc == CURLM_CALL_MULTI_PERFORM);
+
+                while ($active && $mrc == CURLM_OK) {
+                    if (curl_multi_select($mh) != -1) {
+                        do {
+                            $mrc = curl_multi_exec($mh, $active);
+                        } while ($mrc == CURLM_CALL_MULTI_PERFORM);
+                    }
+                }
+
+                // Get the result
+                $success = curl_multi_getcontent($ch);
+                $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                $error = curl_error($ch);
+                $effectiveUrl = curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
+
+                curl_multi_remove_handle($mh, $ch);
+                curl_multi_close($mh);
+                curl_close($ch);
+
+                if (!$success || $httpCode !== 200) {
+                    // Clean up the file if download failed
+                    if (file_exists($to)) {
+                        unlink($to);
+                    }
+                    
+                    $errorMessage = "Failed to download file from {$finalUrl}. HTTP Code: {$httpCode}";
+                    if ($error) {
+                        $errorMessage .= ". Error: {$error}";
+                    }
+                    
+                    $this->io->error($errorMessage);
+                    $reject(new \RuntimeException($errorMessage));
+                    return;
+                }
+
+                // Save the downloaded content to file
+                if (strlen($success) !== 0) {
+                    $this->io->debug(
+                        sprintf('Downloaded %s content size is %d', $finalUrl, strlen($success)),
+                    );
+
+                    file_put_contents($to, $success);
+                    
+                    $this->io->debug(
+                        sprintf('Downloaded %s archive saved to %s', $finalUrl, $to),
+                    );
+                }
+
+                if (!is_file($to)) {
+                    $errorMessage = "Failed to create file at {$to}";
+                    $this->io->error($errorMessage);
+                    $reject(new \RuntimeException($errorMessage));
+                    return;
+                }
+
+                $this->io->debug(sprintf('File content length %d', strlen(file_get_contents($to))));
+                
+                // Create a response object
+                $response = new Response(['url' => $effectiveUrl], 200, [], file_get_contents($to));
+
+                $this->io->debug(sprintf('Async download completed successfully: %s', $finalUrl));
+                
+                // Resolve the promise
+                $resolve($response);
+                
+            } catch (\Exception $e) {
+                $this->io->error(sprintf('Async download failed for %s: %s', $url, $e->getMessage()));
+                $reject($e);
             }
-
-            // Get the final download URL with redirects
-            $finalUrl = $this->getAssetDownloadUrlWithCurl($url);
-
-            // Download the file synchronously (since we need to ensure it exists)
-            $success = $this->downloadWithCurl($finalUrl, $to, $options);
-
-            if (!$success || !is_file($to)) {
-                throw new \RuntimeException("Failed to download GitHub release archive from {$url}");
-            }
-
-            $this->io->debug(sprintf('File content length %d', strlen(file_get_contents($to))));
-            // Create a simple response object
-            $response = new Response(['url' => $finalUrl], 200, [], file_get_contents($to));
-
-            // Return a resolved promise
-            return resolve($response);
-        } catch (\Exception $e) {
-            // Return a rejected promise
-            return reject($e);
-        }
+        });
     }
 } 

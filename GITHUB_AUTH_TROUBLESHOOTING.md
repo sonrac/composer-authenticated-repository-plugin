@@ -148,6 +148,16 @@ If you're using this plugin, ensure your `composer.json` includes:
 4. Creates proper mock response objects
 5. Test with: `php test-async-download.php`
 
+### Issue: Need True Asynchronous Downloads with React PHP
+**Cause**: Want to use React PHP promises for non-blocking downloads
+**Solution**: The plugin now supports React PHP async downloads:
+1. Uses `curl_multi` for non-blocking downloads
+2. Creates proper React Promise objects
+3. Handles authentication and redirects asynchronously
+4. Provides comprehensive error handling
+5. Integrates with React's promise system
+6. Test with: `php test-react-async-download.php`
+
 ## Security Best Practices
 
 1. **Use environment variables** instead of hardcoding tokens in files
@@ -202,6 +212,11 @@ If you're using this plugin, ensure your `composer.json` includes:
    php test-async-download.php
    ```
 
+10. **Test React PHP async download functionality**:
+    ```bash
+    php test-react-async-download.php
+    ```
+
 ## Plugin Updates
 
 The plugin has been updated to:
@@ -217,6 +232,8 @@ The plugin has been updated to:
 - Bypass Composer's download manager for GitHub assets to avoid async issues
 - **Handle async downloads properly** by creating files before returning promises
 - Ensure downloaded files exist for Composer's unzip process
+- **Support React PHP async downloads** using curl_multi and proper promise handling
+- Provide non-blocking downloads with comprehensive error handling
 
 ## Still Having Issues?
 
