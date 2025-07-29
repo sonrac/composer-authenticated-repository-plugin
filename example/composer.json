@@ -27,7 +27,7 @@
         "psr-4": {
             "Example\\": "src/"
         }
-    }
+    },
     "autoload-dev": {
         "psr-4": {
             "Example\\Tests\\": "tests/"
@@ -50,8 +50,13 @@
                     "url": "https://github.com/my-org/private-packages/releases/composer-repository/composer-repository.json"
                 },
                 {
-                    "owner": "my-org",
-                    "name": "private-packages-new",
+                    "owner": "some-org",
+                    "name": "some-package",
+                    "url": "https://artifacts.mycompany.com/composer-repository.json"
+                },
+                {
+                    "owner": "company",
+                    "name": "internal-libraries",
                     "url": "https://artifacts.mycompany.com/composer-repository.json"
                 }
             ]

@@ -13,6 +13,7 @@ The issue occurs when Composer tries to access GitHub release assets but doesn't
 1. **Private repositories** - Require authentication even for public assets
 2. **Rate limiting** - GitHub API has rate limits for unauthenticated requests
 3. **Asset access permissions** - Some assets require specific permissions
+4. **Repository not configured** - The plugin only adds authentication for repositories listed in its configuration
 
 ## Solutions
 
@@ -45,7 +46,31 @@ Add to your `composer.json`:
 }
 ```
 
-### 2. Create GitHub Token
+### 2. Configure Plugin Repository Matching
+
+**Important**: The plugin only adds authentication headers for repositories that are explicitly configured in the plugin's `extra` section.
+
+Add the repository to your `composer.json`:
+
+```json
+{
+    "extra": {
+        "composer-authenticated-plugin": {
+            "repositories": [
+                {
+                    "owner": "MacPaw",
+                    "name": "platform-shared-clients",
+                    "url": "https://github.com/MacPaw/platform-shared-clients"
+                }
+            ]
+        }
+    }
+}
+```
+
+**Note**: The `owner` and `name` fields must match the GitHub repository owner and name exactly (case-insensitive).
+
+### 3. Create GitHub Token
 
 #### For Public Repositories Only:
 1. Go to https://github.com/settings/tokens/new?scopes=&description=Composer+Authentication
@@ -61,41 +86,21 @@ Add to your `composer.json`:
 4. Click "Generate token"
 5. Copy the token and use it in your configuration
 
-### 3. Test Your Configuration
+### 4. Test Your Configuration
 
-Run the test script to verify your GitHub token works:
+Enable debug mode to see what the plugin is doing:
 
 ```bash
-php test-github-auth.php
+composer install -vvv
 ```
 
-This will:
-- Check if your token is properly configured
-- Test access to the specific repository
-- Test access to the specific asset
-- Provide detailed error messages if authentication fails
-
-### 4. Plugin-specific Configuration
-
-If you're using this plugin, ensure your `composer.json` includes:
-
-```json
-{
-    "extra": {
-        "composer-authenticated-plugin": {
-            "repositories": [
-                {
-                    "url": "https://api.github.com/repos/MacPaw/platform-shared-clients/contents/composer-repository.json"
-                }
-            ]
-        }
-    },
-    "config": {
-        "github-oauth": {
-            "api.github.com": "your_github_token_here"
-        }
-    }
-}
+Look for debug output like:
+```
+Processing URL: https://api.github.com/repos/MacPaw/platform-shared-clients/releases/assets/275933430
+Needs auth headers: YES
+Link supported for get asset download url: YES
+Configured repositories: [{"owner":"MacPaw","name":"platform-shared-clients","url":"https://github.com/MacPaw/platform-shared-clients"}]
+Added GitHub token authorization header
 ```
 
 ## Common Issues and Solutions
@@ -116,47 +121,23 @@ If you're using this plugin, ensure your `composer.json` includes:
 **Cause**: Token lacks required permissions
 **Solution**: Ensure your token has the `repo` scope for private repositories
 
+### Issue: Authentication Headers Not Added
+**Cause**: Repository not configured in plugin's `extra` section
+**Solution**: Add the repository to the plugin configuration with correct `owner` and `name` fields
+
+### Issue: Debug Shows "Needs auth headers: NO"
+**Cause**: URL doesn't match configured repositories
+**Solution**: 
+1. Check that the repository is listed in `extra.composer-authenticated-plugin.repositories`
+2. Verify the `owner` and `name` match the GitHub repository exactly
+3. Check the debug output to see what repositories are configured
+
 ### Issue: Asset Download Fails with Redirect
 **Cause**: GitHub release assets return redirect URLs that need to be followed
-**Solution**: The plugin now automatically handles redirects. If you're still having issues:
+**Solution**: The plugin automatically handles redirects. If you're still having issues:
 1. Check that your token has the correct permissions
 2. Verify the asset exists and is accessible
-3. Run the redirect test script: `php test-redirect-handling.php`
-
-### Issue: ZIP File Downloads Fail
-**Cause**: ZIP downloads don't include authentication headers
-**Solution**: The plugin now uses curl to download GitHub release archives directly:
-1. Ensure your GitHub token is properly configured
-2. The plugin automatically detects GitHub release download URLs
-3. Uses curl with authentication headers and redirect support
-4. Bypasses Composer's download manager to avoid async issues
-5. Test with: `php test-curl-download.php`
-
-### Issue: Async HTTP Request Error
-**Cause**: "You must use the HttpDownloader instance which is part of a Composer\Loop instance"
-**Solution**: This error occurs when the plugin interferes with Composer's async operations. The plugin has been updated to avoid this issue by:
-1. Only handling repository-level authentication
-2. Not interfering with the download manager's async operations
-3. Using Composer's built-in authentication for package downloads
-
-### Issue: Unzip Cannot Find Archive File
-**Cause**: "unzip: cannot find or open /path/to/temp.zip"
-**Solution**: This error occurs when the download process doesn't create the file properly. The plugin now:
-1. Uses curl to download files directly with authentication
-2. Ensures the file is created before returning the promise
-3. Handles GitHub release downloads asynchronously
-4. Creates proper mock response objects
-5. Test with: `php test-async-download.php`
-
-### Issue: Need True Asynchronous Downloads with React PHP
-**Cause**: Want to use React PHP promises for non-blocking downloads
-**Solution**: The plugin now supports React PHP async downloads:
-1. Uses `curl_multi` for non-blocking downloads
-2. Creates proper React Promise objects
-3. Handles authentication and redirects asynchronously
-4. Provides comprehensive error handling
-5. Integrates with React's promise system
-6. Test with: `php test-react-async-download.php`
+3. Ensure the repository is configured in the plugin
 
 ## Security Best Practices
 
@@ -164,6 +145,7 @@ If you're using this plugin, ensure your `composer.json` includes:
 2. **Use minimal scopes** - only grant the permissions you need
 3. **Rotate tokens regularly** - GitHub tokens don't expire but should be rotated
 4. **Use different tokens** for different environments (dev, staging, production)
+5. **Configure repository matching** - only add authentication for repositories you trust
 
 ## Debugging Steps
 
@@ -182,65 +164,35 @@ If you're using this plugin, ensure your `composer.json` includes:
    curl -H "Authorization: token YOUR_TOKEN" https://api.github.com/repos/MacPaw/platform-shared-clients/releases/assets/275933687
    ```
 
-4. **Run the test script**:
+4. **Enable debug mode**:
    ```bash
-   php test-github-auth.php
+   composer install -vvv
    ```
 
-5. **Test redirect handling**:
-   ```bash
-   php test-redirect-handling.php
-   ```
+5. **Check plugin configuration**:
+   Verify your `composer.json` has the correct `extra.composer-authenticated-plugin.repositories` configuration.
 
-6. **Test ZIP download authentication**:
-   ```bash
-   php test-zip-download.php
-   ```
-
-7. **Test basic authentication**:
-   ```bash
-   php test-basic-auth.php
-   ```
-
-8. **Test curl-based download functionality**:
-   ```bash
-   php test-curl-download.php
-   ```
-
-9. **Test async download functionality**:
-   ```bash
-   php test-async-download.php
-   ```
-
-10. **Test React PHP async download functionality**:
-    ```bash
-    php test-react-async-download.php
-    ```
+6. **Test repository matching**:
+   Look for debug output showing whether the URL matches configured repositories.
 
 ## Plugin Updates
 
 The plugin has been updated to:
-- Use correct GitHub API authentication format (`token` instead of `Bearer`)
-- Provide better error messages for authentication failures
-- Handle GitHub asset downloads more robustly
-- **Automatically follow redirects** when downloading GitHub release assets
-- Use HEAD requests to resolve redirect URLs when needed
-- Support up to 5 redirect levels for complex asset URLs
-- **Handle repository-level authentication** without interfering with Composer's async operations
-- Work with Composer's built-in authentication for package downloads
-- **Use curl for direct GitHub release archive downloads** with authentication and redirect support
-- Bypass Composer's download manager for GitHub assets to avoid async issues
-- **Handle async downloads properly** by creating files before returning promises
-- Ensure downloaded files exist for Composer's unzip process
-- **Support React PHP async downloads** using curl_multi and proper promise handling
-- Provide non-blocking downloads with comprehensive error handling
+- **Use PreFileDownloadEvent** to intercept downloads and add authentication headers
+- **Require repository configuration** in the plugin's `extra` section
+- **Provide comprehensive debug logging** to help troubleshoot issues
+- **Match repositories by owner and name** to ensure authentication is only added for configured repositories
+- **Support both GitHub tokens and HTTP basic auth** with proper header injection
+- **Handle GitHub asset downloads** with automatic redirect following
+- **Maintain compatibility** with existing Composer workflows
 
 ## Still Having Issues?
 
 If you're still experiencing problems:
 
-1. Check the GitHub repository permissions and visibility
-2. Verify your token has the correct scopes
-3. Test with the provided test script
-4. Check Composer's debug output: `composer install -vvv`
-5. Review the plugin's error handling in the logs 
+1. **Check the debug output** when running `composer install -vvv`
+2. **Verify repository configuration** in the plugin's `extra` section
+3. **Check GitHub repository permissions** and visibility
+4. **Verify your token has the correct scopes**
+5. **Test with the provided curl commands** to isolate the issue
+6. **Review the plugin's error handling** in the debug logs 

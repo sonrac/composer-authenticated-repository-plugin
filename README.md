@@ -1,14 +1,16 @@
 # Composer Authenticated Repository Plugin
 
-A Composer plugin that adds support for a new repository type `composer-authenticated` which extends the standard Composer repository behavior with automatic authentication support for GitHub tokens and HTTP basic auth.
+A Composer plugin that provides automatic authentication support for GitHub repositories and HTTP basic auth when downloading packages. The plugin intercepts file downloads and adds authentication headers as needed.
 
 ## Features
 
-- **Custom Repository Type**: New `composer-authenticated` repository type
-- **GitHub Token Support**: Automatic GitHub OAuth token injection
+- **Pre-Download Hook**: Intercepts file downloads using Composer's `PreFileDownloadEvent`
+- **GitHub Token Support**: Automatic GitHub OAuth token injection for GitHub URLs
 - **HTTP Basic Auth**: Support for HTTP basic authentication
+- **Repository Configuration**: Configurable repository matching for authentication
+- **Debug Logging**: Comprehensive debug output for troubleshooting
 - **Composer Config Integration**: Uses existing Composer authentication configuration
-- **Transparent Operation**: Works exactly like standard Composer repositories but with auth
+- **Transparent Operation**: Works with existing Composer workflows
 
 ## Installation
 
@@ -62,9 +64,9 @@ composer config http-basic.your-repo.com username password
 composer config http-basic.artifacts.company.com username password
 ```
 
-### 2. Use the Authenticated Repository
+### 2. Configure Repository Matching
 
-Add configuration to composer `extra` section
+Add configuration to composer `extra` section to specify which repositories should receive authentication:
 
 ```json
 {
@@ -72,14 +74,14 @@ Add configuration to composer `extra` section
     "composer-authenticated-plugin": {
       "repositories": [
         {
-          "owner": "my-org",
-          "name": "private-packages",
-          "url": "https://github.com/my-org/private-packages/releases/composer-repository/composer-repository.json"
+          "owner": "MacPaw",
+          "name": "platform-shared-clients",
+          "url": "https://github.com/MacPaw/platform-shared-clients"
         },
         {
           "owner": "my-org",
-          "name": "private-packages-new",
-          "url": "https://artifacts.mycompany.com/composer-repository.json"
+          "name": "private-packages",
+          "url": "https://github.com/my-org/private-packages"
         }
       ]
     }
@@ -87,41 +89,59 @@ Add configuration to composer `extra` section
 }
 ```
 
+**Important**: The `owner` and `name` fields are required and must match the GitHub repository owner and name exactly.
+
 ## How It Works
 
-### 1. Plugin Registration
+### 1. Plugin Activation
 
-The plugin registers a new repository type `composer-authenticated` using Composer's activation composer plugin mechanism for initialization
+The plugin activates during Composer initialization and:
+- Reads authentication credentials from Composer configuration
+- Creates an authenticated HTTP downloader
+- Registers custom repository types
+- Subscribes to the `PreFileDownloadEvent`
 
-### 2. Authentication Injection
+### 2. Download Interception
 
-The `AuthenticatedComposerRepository` wraps the standard Composer repository and injects authentication:
+When Composer attempts to download a file, the plugin:
 
 ```php
-private function createAuthenticatedDownloader(HttpDownloader $httpDownloader, Config $config): HttpDownloader
+public function onDownload(PreFileDownloadEvent $preFileDownloadEvent): void
 {
-    $githubToken = $this->getGitHubToken($config);
-    $httpBasicAuth = $this->getHttpBasicAuth($config);
+    $processedUrl = $preFileDownloadEvent->getProcessedUrl();
     
-    return new AuthenticatedHttpDownloader(
-        $httpDownloader,
-        $githubToken,
-        $httpBasicAuth,
-        $this->authConfig
-    );
+    // Check if URL needs authentication
+    if ($this->httpDownloader->isNeedAuthHeaders($processedUrl)) {
+        // Add authentication headers
+        $transportOptions = $this->httpDownloader->addAuthenticationHeaders($processedUrl, $options);
+        $preFileDownloadEvent->setTransportOptions($transportOptions);
+    }
 }
 ```
 
-### 3. HTTP Header Injection
+### 3. Repository Matching
 
-The `AuthenticatedHttpDownloader` adds authentication headers to all requests:
+The plugin matches URLs against configured repositories:
+
+```php
+public function isNeedAuthHeaders(string $url): bool
+{
+    // Parse URL to extract owner/repo from GitHub URLs
+    // Match against configured repositories
+    // Return true if authentication is needed
+}
+```
+
+### 4. Authentication Header Injection
+
+For matching URLs, the plugin adds appropriate headers:
 
 ```php
 public function addAuthenticationHeaders(string $url, array $options): array
 {
     $headers = $options['http']['header'] ?? [];
 
-    // Add GitHub token
+    // Add GitHub token for GitHub URLs
     if ($this->githubToken && $this->isGitHubUrl($url)) {
         $headers[] = 'Authorization: token ' . $this->githubToken;
     }
@@ -137,7 +157,7 @@ public function addAuthenticationHeaders(string $url, array $options): array
 }
 ```
 
-### Environment Variables
+## Environment Variables
 
 For security, use environment variables:
 
@@ -151,31 +171,37 @@ export ARTIFACT_PASSWORD=your-password
 composer update
 ```
 
-## Repository Manifest Format
-
-The authenticated repository expects the same format as standard Composer repositories:
+Or use Composer's environment variable substitution:
 
 ```json
 {
-    "packages": {
-        "my-org/private-package": {
-            "1.0.0": {
-                "name": "my-org/private-package",
-                "version": "1.0.0",
-                "description": "Private package",
-                "type": "library",
-                "dist": {
-                    "type": "zip",
-                    "url": "https://api.github.com/repos/my-org/private-package/zipball/1.0.0"
-                },
-                "require": {
-                    "php": ">=8.0"
-                }
+    "config": {
+        "github-oauth": {
+            "api.github.com": "%env(GITHUB_TOKEN)%"
+        },
+        "http-basic": {
+            "artifacts.company.com": {
+                "username": "%env(ARTIFACT_USERNAME)%",
+                "password": "%env(ARTIFACT_PASSWORD)%"
             }
         }
     }
 }
 ```
+
+## Debug Mode
+
+Enable debug logging to see what the plugin is doing:
+
+```bash
+composer install -vvv
+```
+
+The plugin will output debug information including:
+- URLs being processed
+- Whether authentication headers are needed
+- Repository matching results
+- Authentication header details
 
 ## Security Considerations
 
@@ -183,35 +209,49 @@ The authenticated repository expects the same format as standard Composer reposi
 - **Environment Variables**: Use environment variables for sensitive configuration
 - **Token Scopes**: Use minimal required scopes for GitHub tokens
 - **HTTPS Only**: All requests use HTTPS for security
+- **Repository Matching**: Only URLs matching configured repositories receive authentication
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Authentication Errors**: Verify your tokens/credentials are correctly configured
-2. **Repository Not Found**: Ensure the repository URL is accessible with your credentials
-3. **Package Not Found**: Check that the package is listed in the repository manifest
-4. **Permission Denied**: Verify your GitHub token has the required scopes
+1. **401 Authentication Errors**: 
+   - Verify your tokens/credentials are correctly configured
+   - Check that the repository is configured in the plugin's `extra` section
+   - Ensure the `owner` and `name` match the GitHub repository exactly
 
-### Debug Mode
+2. **Repository Not Found**: 
+   - Ensure the repository URL is accessible with your credentials
+   - Verify the repository is listed in the plugin configuration
 
-Enable Composer debug mode to see detailed information:
+3. **Package Not Found**: 
+   - Check that the package is listed in the repository manifest
+   - Verify download URLs are accessible with authentication
 
-```bash
-composer install --verbose
-```
+4. **Permission Denied**: 
+   - Verify your GitHub token has the required scopes
+   - Check repository visibility and access permissions
 
-### Check Authentication
+### Debug Steps
 
-Verify your authentication configuration:
+1. **Check authentication configuration**:
+   ```bash
+   composer config github-oauth
+   composer config http-basic
+   ```
 
-```bash
-# Check GitHub token configuration
-composer config github-oauth
+2. **Enable verbose output**:
+   ```bash
+   composer install -vvv
+   ```
 
-# Check HTTP basic auth configuration
-composer config http-basic
-```
+3. **Test repository access**:
+   ```bash
+   curl -H "Authorization: token YOUR_TOKEN" https://api.github.com/repos/owner/repo
+   ```
+
+4. **Verify plugin configuration**:
+   Check that your `composer.json` has the correct `extra.composer-authenticated-plugin.repositories` configuration.
 
 ## Development
 
@@ -234,12 +274,14 @@ composer test
 composer-authenticated-repository-plugin/
 ├── composer.json                           # Plugin package definition
 ├── src/
-│   ├── Plugin.php                          # Main plugin class
+│   ├── Plugin.php                          # Main plugin class with PreFileDownloadEvent
 │   └── Repository/
-│       ├── AuthenticatedComposerRepository.php # Authenticated repository
+│       ├── AuthenticatedComposerRepository.php # Repository wrapper
 │       └── AuthenticatedHttpDownloader.php     # HTTP downloader with auth
 ├── tests/
 │   └── AuthenticatedRepositoryTest.php     # Unit tests
+├── example/
+│   └── composer.json                       # Example configuration
 ```
 
 ## License
@@ -248,4 +290,43 @@ MIT License - see LICENSE file for details.
 
 ## Support
 
-For issues and questions, please create an issue in the GitHub repository. 
+For issues and questions, please create an issue in the GitHub repository.
+
+## Current State and Recent Updates
+
+### Implementation Overview
+
+The plugin currently implements authentication support through:
+
+1. **PreFileDownloadEvent Hook**: Intercepts all file downloads and adds authentication headers as needed
+2. **Repository Matching**: Only adds authentication for URLs matching configured repositories
+3. **Debug Logging**: Comprehensive debug output for troubleshooting
+4. **GitHub Token Support**: Automatic token injection for GitHub URLs
+5. **HTTP Basic Auth**: Support for HTTP basic authentication
+
+### Key Features
+
+- **Security**: Repository-specific authentication prevents token exposure
+- **Compatibility**: Works with existing Composer workflows
+- **Debugging**: Extensive debug logging for troubleshooting
+- **Flexibility**: Supports both GitHub tokens and HTTP basic auth
+
+### Recent Changes
+
+- **Repository Configuration**: Now requires explicit repository configuration in `extra.composer-authenticated-plugin.repositories`
+- **Debug Logging**: Added comprehensive debug output for troubleshooting
+- **URL Matching**: Improved repository matching logic with case-insensitive comparison
+- **Documentation**: Updated all README files to reflect current implementation
+
+### Known Limitations
+
+- Only supports GitHub repositories and HTTP basic auth
+- Requires explicit repository configuration
+- Debug logging only available with `-vvv` flag
+
+### Future Enhancements
+
+- Support for additional authentication methods (OAuth 2.0, API keys)
+- Caching and rate limiting support
+- Enhanced error handling and retry logic
+- Performance monitoring and metrics 
