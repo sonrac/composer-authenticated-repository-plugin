@@ -101,7 +101,7 @@ class Plugin implements PluginInterface
     }
 
     /**
-     * @param array{repositories: array<int, array{url: string, owner: string, name: string}>} $pluginConfig
+     * @param array{repositories: array<int, array{url: string, owner: string, name: string, force_download_via_plugin: bool}>} $pluginConfig
      */
     private function interceptDownloadManager(array $pluginConfig): void
     {
@@ -118,7 +118,8 @@ class Plugin implements PluginInterface
             $githubToken,
             $httpBasicAuth,
             $pluginConfig['repositories'],
-            $this->io
+            $this->io,
+            $pluginConfig['force_download_via_plugin'] ?? false,
         );
 
         /** @var ZipDownloader $zipDownloader */

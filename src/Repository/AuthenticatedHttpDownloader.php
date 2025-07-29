@@ -19,6 +19,7 @@ class AuthenticatedHttpDownloader extends HttpDownloader
     private ?string $githubToken;
     private ?array $httpBasicAuth;
     private IOInterface $io;
+    private bool $enableForceDownloadWiaPlugin;
 
     /**
      * @var array<int, array{url: string, owner: string, name: string}> $repositories
@@ -34,12 +35,14 @@ class AuthenticatedHttpDownloader extends HttpDownloader
         ?array $httpBasicAuth,
         array $repositories,
         IOInterface $io,
+        bool $enableForceDownloadWiaPlugin = false,
     ) {
         $this->originalDownloader = $originalDownloader;
         $this->githubToken = $githubToken;
         $this->httpBasicAuth = $httpBasicAuth;
         $this->repositories = $repositories;
         $this->io = $io;
+        $this->enableForceDownloadWiaPlugin = $enableForceDownloadWiaPlugin;
     }
 
     public function get($url, $options = []): Response
@@ -84,16 +87,19 @@ class AuthenticatedHttpDownloader extends HttpDownloader
     public function addCopy(string $url, string $to, array $options = []): PromiseInterface
     {
         // Check if this is a GitHub release download URL that we should handle
-        if ($this->isLinkSupported($url) && $this->isGitHubReleaseDownload($url)) {
-            $this->io->debug(
-                sprintf('Download %s from dist', $url),
+        if (
+            $this->enableForceDownloadWiaPlugin === true ||
+            ($this->isLinkSupported($url) && $this->isGitHubReleaseDownload($url))
+        ) {
+            $this->io->warning(
+                sprintf('Download %s from dist with plugin composer-authenticated-repository-plugin', $url),
             );
             // For GitHub releases, download directly and return a resolved promise
             return $this->downloadGitHubReleaseAsync($url, $to, $options);
         }
 
-        $this->io->debug(
-            sprintf('Fallback Download %s from dist with authorization headers', $url),
+        $this->io->warning(
+            sprintf('Fallback Download %s', $url),
         );
 
         // For non-GitHub URLs, use the original downloader
@@ -101,6 +107,10 @@ class AuthenticatedHttpDownloader extends HttpDownloader
 
         if ($this->isLinkSupported($url)) {
             $options['http']['header'][] = 'Accept: application/octet-stream';
+
+            $this->io->warning(
+                sprintf('Fallback Download %s from dist with authorization headers', $url),
+            );
         }
 
         return $this->originalDownloader->addCopy($url, $to, $options);
@@ -472,7 +482,7 @@ class AuthenticatedHttpDownloader extends HttpDownloader
                 throw new \RuntimeException("Failed to download GitHub release archive from {$url}");
             }
 
-            var_dump('File content length', strlen(file_get_contents($to)));
+            $this->io->debug(sprintf('File content length %d', strlen(file_get_contents($to))));
             // Create a simple response object
             $response = new Response(['url' => $finalUrl], 200, [], file_get_contents($to));
 
