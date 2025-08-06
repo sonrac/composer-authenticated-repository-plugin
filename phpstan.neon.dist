@@ -1,10 +1,7 @@
 parameters:
-    excludes_analyse:
+    level: max
     paths:
         - src
         - tests
-    excludePaths:
-        - tests/Fixture/Application/Kernel.php
-        - tests/Functional/AbstractKernelTestCase.php
     treatPhpDocTypesAsCertain: false
     ignoreErrors:

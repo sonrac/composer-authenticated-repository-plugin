@@ -19,9 +19,9 @@ final class AuthenticationHttpDownloaderTest extends TestCase
             [],
             [
                 [
+                    'url' => 'https://github.com/some-org/some-repo/releases/download/composer-repository/composer-repository.json',
                     'owner' => 'some-org',
                     'name' => 'some-repo',
-                    'https://github.com/some-org/some-repo/releases/download/composer-repository/composer-repository.json'
                 ]
             ],
             $this->createMock(IOInterface::class),

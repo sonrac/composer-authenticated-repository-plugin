@@ -83,6 +83,7 @@ class AuthenticatedRepositoryTest extends TestCase
         $method->setAccessible(true);
         
         $options = [];
+        /** @var array<string, mixed> $result */
         $result = $method->invoke(
             $downloader,
             'https://api.github.com/repos/some-org/some-repo/release/some-release/release.zip',

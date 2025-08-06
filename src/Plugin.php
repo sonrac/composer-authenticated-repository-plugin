@@ -40,6 +40,7 @@ class Plugin implements PluginInterface, EventSubscriberInterface
             $extra[self::NAME] = ['repositories' => []];
         }
 
+        /** @var array{repositories: array<array{url: string, name: string, owner: string}>} $pluginConfig */
         $pluginConfig = $extra[self::NAME] ?? ['repositories' => []];
 
         foreach ($pluginConfig['repositories'] as $repository) {
@@ -100,6 +101,11 @@ class Plugin implements PluginInterface, EventSubscriberInterface
 
         // Debug: Show configured repositories
         $extra = $this->composer->getPackage()->getExtra();
+        /**
+         * @var array{
+         * repositories: array{}}|array{repositories: non-empty-array<array{url: string, name: string, owner: string}
+         * >} $pluginConfig
+         */
         $pluginConfig = $extra[self::NAME] ?? ['repositories' => []];
         $this->io->debug(sprintf('<info>Configured repositories: %s</info>', json_encode($pluginConfig['repositories'])));
 
@@ -108,6 +114,7 @@ class Plugin implements PluginInterface, EventSubscriberInterface
                 $assetUrl = $this->httpDownloader->getGitHubAssetApiUrl($processedUrl);
 
                 if ($assetUrl !== null) {
+                    // @phpstan-ignore-next-line
                     $preFileDownloadEvent->setProcessedUrl($assetUrl);
                     $this->io->debug(
                         sprintf('<info>Converted to asset URL: from %s to %s</info>', $processedUrl, $assetUrl)
@@ -139,8 +146,11 @@ class Plugin implements PluginInterface, EventSubscriberInterface
                 ),
             );
 
-            $this->io->debug('Context class' . get_class($context));
+            if (is_object($context)) {
+                $this->io->debug('Context class' . get_class($context));
+            }
             $this->io->debug('Processed url' . $processedUrl);
+            // @phpstan-ignore-next-line
             $this->io->debug('Is package context: ' .  $context instanceof PackageInterface ? 'YES' : 'NO');
         } else {
             $this->io->info('URL does not need auth headers - this might be the issue!');
@@ -155,13 +165,19 @@ class Plugin implements PluginInterface, EventSubscriberInterface
     }
 
     /**
-     * @param array{repositories: array<int, array{url: string, owner: string, name: string}>} $pluginConfig
+     * @param array{
+     *     repositories: array{}}|array{repositories: non-empty-array<array{url: string, name: string, owner: string
+     * }>} $pluginConfig
      */
     private function registerRepositoryType(RepositoryManager $repositoryManager, array $pluginConfig): void
     {
         foreach ($pluginConfig['repositories'] as $repository) {
             $repository = new AuthenticatedComposerRepository(
-                $repository,
+                // @phpstan-ignore-next-line
+                [
+                    'url' => $repository['url'],
+                    'type' => 'composer',
+                ],
                 $this->io,
                 $this->composer->getConfig(),
                 $this->httpDownloader,
@@ -179,12 +195,17 @@ class Plugin implements PluginInterface, EventSubscriberInterface
         $githubTokens = $config->get('github-oauth') ?? [];
 
         // Return token for api.github.com if available
+        // @phpstan-ignore-next-line
         return $githubTokens['api.github.com'] ?? $githubTokens['github.com'] ?? null;
     }
 
+    /**
+     * @return array{username: string, password: string}|null
+     */
     private function getHttpBasicAuth(): ?array
     {
         $config = $this->composer->getConfig();
+        /** @var array{}|array<string, array{username: string, password: string}> $httpBasicAuth */
         $httpBasicAuth = $config->get('http-basic') ?? [];
 
         // Return credentials for any configured host

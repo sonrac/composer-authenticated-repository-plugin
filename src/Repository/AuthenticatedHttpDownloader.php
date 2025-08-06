@@ -19,12 +19,12 @@ class AuthenticatedHttpDownloader extends HttpDownloader
     private IOInterface $io;
 
     /**
-     * @var array<int, array{url: string, owner: string, name: string}> $repositories
+     * @var array<array{url: string, name: string, owner: string}> $repositories
      */
     private array $repositories;
 
     /**
-     * @param array<int, array{url: string, owner: string, name: string}> $repositories
+     * @param array<array{url: string, name: string, owner: string}> $repositories
      */
     public function __construct(
         HttpDownloader $originalDownloader,
