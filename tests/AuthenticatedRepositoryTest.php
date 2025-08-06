@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Sonrac\ComposerAuthenticatedRepositoryPlugin\Tests;
 
+use Composer\IO\IOInterface;
 use PHPUnit\Framework\TestCase;
-use Sonrac\ComposerAuthenticatedRepositoryPlugin\Repository\AuthenticatedComposerRepository;
 use Sonrac\ComposerAuthenticatedRepositoryPlugin\Repository\AuthenticatedHttpDownloader;
 
 class AuthenticatedRepositoryTest extends TestCase
@@ -18,7 +18,14 @@ class AuthenticatedRepositoryTest extends TestCase
             $mockDownloader,
             'test-token',
             ['username', 'password'],
-            ['url' => 'https://api.github.com']
+            [
+                [
+                    'url' => 'https://api.github.com',
+                    'name' => 'some-repo',
+                    'owner' => 'some-org',
+                ],
+            ],
+            $this->createMock(IOInterface::class),
         );
         
         $this->assertInstanceOf(AuthenticatedHttpDownloader::class, $downloader);
@@ -32,7 +39,14 @@ class AuthenticatedRepositoryTest extends TestCase
             $mockDownloader,
             'test-token',
             null,
-            []
+            [
+                [
+                    'url' => 'https://api.github.com',
+                    'name' => 'some-repo',
+                    'owner' => 'some-org',
+                ],
+            ],
+            $this->createMock(IOInterface::class),
         );
         
         // Test GitHub URL detection using reflection
@@ -53,7 +67,14 @@ class AuthenticatedRepositoryTest extends TestCase
             $mockDownloader,
             'test-token',
             ['user', 'pass'],
-            []
+            [
+                [
+                    'url' => 'https://api.github.com',
+                    'name' => 'some-repo',
+                    'owner' => 'some-org',
+                ],
+            ],
+            $this->createMock(IOInterface::class),
         );
         
         // Test authentication headers using reflection
@@ -62,8 +83,12 @@ class AuthenticatedRepositoryTest extends TestCase
         $method->setAccessible(true);
         
         $options = [];
-        $result = $method->invoke($downloader, 'https://api.github.com/test', $options);
-        
+        $result = $method->invoke(
+            $downloader,
+            'https://api.github.com/repos/some-org/some-repo/release/some-release/release.zip',
+            $options,
+        );
+
         $this->assertArrayHasKey('http', $result);
         $this->assertArrayHasKey('header', $result['http']);
         $this->assertContains('Authorization: token test-token', $result['http']['header']);

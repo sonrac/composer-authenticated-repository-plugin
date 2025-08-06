@@ -144,7 +144,7 @@ class AuthenticatedHttpDownloader extends HttpDownloader
     public function addAuthenticationHeaders(string $url, array $options, ?string $acceptType = null): array
     {
         $this->io->debug(sprintf('Adding auth headers for URL: %s', $url));
-        
+
         if ($this->isNeedAuthHeaders($url) === false) {
             $this->io->debug('URL does not need auth headers');
             return $options;
@@ -285,7 +285,7 @@ class AuthenticatedHttpDownloader extends HttpDownloader
 
         $urlParts = parse_url($url);
         $this->io->debug(sprintf('URL parts: %s', json_encode($urlParts)));
-        
+
         $parts = explode(
             '/',
             str_replace(
@@ -307,7 +307,7 @@ class AuthenticatedHttpDownloader extends HttpDownloader
 
         foreach ($this->repositories as $repository) {
             $this->io->debug(sprintf('Checking against repository: %s/%s', $repository['owner'], $repository['name']));
-            
+
             if (
                 strtolower($repository['owner']) === strtolower($parts[1]) &&
                 strtolower($repository['name']) === strtolower($parts[2])
