@@ -19,6 +19,11 @@
             <directory>vendor</directory>
             <directory>tests</directory>
         </exclude>
+        <report>
+            <clover outputFile="coverage.xml"/>
+            <html outputDirectory="var/phpunit/coverage"/>
+            <text outputFile="var/phpunit/coverage.txt"/>
+        </report>
     </coverage>
     <php>
         <env name="APP_ENV" value="test"/>
