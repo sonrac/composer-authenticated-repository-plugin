@@ -1,0 +1,10 @@
+parameters:
+    excludes_analyse:
+    paths:
+        - src
+        - tests
+    excludePaths:
+        - tests/Fixture/Application/Kernel.php
+        - tests/Functional/AbstractKernelTestCase.php
+    treatPhpDocTypesAsCertain: false
+    ignoreErrors:
